@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>概要 - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>Kashiwazaki SEO Concierge マニュアル</h1>
+
+        <img src="images/main-visual.png" alt="Kashiwazaki SEO Concierge メインビジュアル" style="width:100%; border-radius:8px; margin-bottom:24px;">
+
+        <p class="lead">あなたのWordPressサイトに「サイト内AIコンシェルジュ」を設置するプラグインです。画面の右下に小さなチャットボタンが表示され、訪問者が質問すると、AIがサイト内のもっとも適したページを探して、やさしい言葉で案内します。</p>
+
+        <p>仕組みはシンプルです。まずサイトのページをAIが読み込んで「索引（インデックス）」を作ります。訪問者が質問すると、その質問に意味的に近いページを索引から探し（<strong>検索AI</strong>）、見つかったページの内容をもとに回答文を作って案内します（<strong>回答AI</strong>）。検索結果のキーワード一致ではなく「意味」で探すので、表現が違っても適切なページにたどり着けます。</p>
+
+        <div class="callout callout-tip">
+            <p><strong>このマニュアルの読み方</strong> — はじめての方は、まず「<a href="concepts.html">仕組みと用語</a>」で全体像と言葉の意味をつかみ、つぎに「<a href="setup.html">インストール・初期設定</a>」のとおりに進めれば、公開までたどり着けます。</p>
+        </div>
+
+        <section>
+            <h2>主要機能</h2>
+            <div class="feature-cards">
+                <div class="feature-card">
+                    <h3>サイト内AIチャット</h3>
+                    <p>画面右下のフローティングチャット。訪問者の質問に対し、サイト内の最適なページをAIが案内します。スマホでは小さな「💁」ボタンになります。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>意味で探す検索</h3>
+                    <p>sitemap.xml と llms.txt を読み込んでページを索引化。キーワード一致ではなく「意味」で関連ページを探します。</p>
+                </div>
+                <div class="feature-card">
+                    <h3>マルチAI・コスト管理</h3>
+                    <p>検索AIと回答AIに別々のサービス（OpenAI / GLM / Ollama）を指定可能。1日・1か月のコスト上限など安全機能を内蔵。</p>
+                </div>
+            </div>
+        </section>
+
+        <figure class="infographic">
+            <img src="images/infographics/overview-flow.png" alt="導入から公開までの全体の流れ" class="lightbox-trigger">
+            <figcaption>図: 導入から公開までの全体の流れ（キー取得 → 設定 → 索引作成 → 公開）</figcaption>
+        </figure>
+
+        <section>
+            <h2>ゼロから公開までの5ステップ</h2>
+            <p>初心者の方でも、次の5ステップで公開できます。各ステップの詳しい手順は「<a href="setup.html">インストール・初期設定</a>」で解説します。</p>
+            <div class="step">
+                <span class="step-number">1</span>
+                <div class="step-body"><p><strong>準備</strong>：WordPress 6.0+ / PHP 8.0+ と、AIサービス（OpenAI など）のアカウント＋APIキーを用意します。</p></div>
+            </div>
+            <div class="step">
+                <span class="step-number">2</span>
+                <div class="step-body"><p><strong>AI設定</strong>：「AI・モデル」タブで、検索AIと回答AIのサービス・APIキー・モデルを設定します。</p></div>
+            </div>
+            <div class="step">
+                <span class="step-number">3</span>
+                <div class="step-body"><p><strong>索引作成</strong>：「インデックス」タブでサイトマップを指定し、「今すぐ再構築」でページを索引化します。</p></div>
+            </div>
+            <div class="step">
+                <span class="step-number">4</span>
+                <div class="step-body"><p><strong>公開前テスト</strong>：「サンドボックス」タブで想定質問を入力し、回答・候補ページを確認します。</p></div>
+            </div>
+            <div class="step">
+                <span class="step-number">5</span>
+                <div class="step-body"><p><strong>公開</strong>：サイトを開いて右下のチャットが動けば完了です。見た目は「表示」タブで調整できます。</p></div>
+            </div>
+        </section>
+
+        <section>
+            <h2>管理画面の地図（8つのタブ）</h2>
+            <p>設定は WordPress 管理画面の左メニュー「Kashiwazaki SEO Concierge」にまとまっています。8つのタブの役割は次のとおりです。</p>
+            <table>
+                <thead><tr><th style="width:26%;">タブ</th><th>役割</th></tr></thead>
+                <tbody>
+                    <tr><td>一般</td><td>サイトマップ／llms.txt のURL など全体に関わる基本設定</td></tr>
+                    <tr><td>AI・モデル</td><td>検索AI・回答AIのサービス／APIキー／モデルの設定（<a href="ai-settings.html">詳細</a>）</td></tr>
+                    <tr><td>インデックス</td><td>索引の再構築・定期再構築・除外ルール（<a href="index-settings.html">詳細</a>）</td></tr>
+                    <tr><td>表示</td><td>チャットの見た目・文言・アイコン・表示するページ（<a href="display.html">詳細</a>）</td></tr>
+                    <tr><td>プライバシー・安全</td><td>コスト上限・回数上限・保存日数など（<a href="privacy-safety.html">詳細</a>）</td></tr>
+                    <tr><td>分析</td><td>質問・回答の履歴と集計（<a href="analytics.html">詳細</a>）</td></tr>
+                    <tr><td>サンドボックス</td><td>公開前に想定質問でテストする場所</td></tr>
+                    <tr><td>説明書</td><td>管理画面内に組み込まれた簡易マニュアル</td></tr>
+                </tbody>
+            </table>
+            <figure class="screenshot">
+                <img src="images/screenshots/00-menu.png" alt="管理画面メニューの位置" class="lightbox-trigger">
+                <figcaption>管理画面の左メニューに「Kashiwazaki SEO Concierge」が追加されます</figcaption>
+            </figure>
+        </section>
+
+        <div class="callout callout-note">
+            <p><strong>「説明書」タブとこのHTMLマニュアルの関係</strong> — 管理画面の「説明書」タブは、設定中にすぐ見られる<em>要点だけの簡易マニュアル</em>です。いま読んでいるこのHTMLマニュアル（docs/）は、スクリーンショットや図を交えた<em>詳しい完全版</em>です。迷ったらまずこのHTMLマニュアルを参照してください。</p>
+        </div>
+
+        <figure class="screenshot">
+            <img src="images/screenshots/08-manual.png" alt="管理画面内の説明書タブ" class="lightbox-trigger">
+            <figcaption>管理画面の「説明書」タブ（設定中にすぐ見られる簡易マニュアル）</figcaption>
+        </figure>
+
+        <section>
+            <h2>動作要件</h2>
+            <ul>
+                <li>WordPress 6.0 以上</li>
+                <li>PHP 8.0 以上</li>
+                <li>AIサービス（OpenAI など）のアカウントとAPIキー（利用は従量課金）</li>
+            </ul>
+            <p>料金の考え方と安全装置（コスト上限）については「<a href="ai-settings.html">AI・モデル設定</a>」と「<a href="privacy-safety.html">プライバシー・安全</a>」で解説します。</p>
+        </section>
+
+        <nav class="page-nav">
+            <span></span>
+            <a href="concepts.html" class="next">仕組みと用語 &raquo;</a>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>

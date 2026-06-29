@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>インストール・初期設定 - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>インストール・初期設定</h1>
+
+        <p class="lead">ここでは、インストールから公開までを順番に解説します。このページのとおりに上から進めれば、初めての方でもチャットを公開できます。</p>
+
+        <h2>はじめる前のチェックリスト</h2>
+        <p>つまずきを防ぐため、先に次を確認しましょう。</p>
+        <div class="callout callout-tip">
+            <p class="callout-title">必要なもの</p>
+            <ul>
+                <li>☐ WordPress <strong>6.0 以上</strong>（「ダッシュボード &gt; 更新」で確認できます）</li>
+                <li>☐ PHP <strong>8.0 以上</strong>（「ツール &gt; サイトヘルス &gt; 情報 &gt; サーバー」で確認できます）</li>
+                <li>☐ AIサービスの<strong>アカウント</strong>（例: OpenAI）と、<strong>支払い設定（課金の有効化）</strong></li>
+                <li>☐ そのサービスで発行した<strong>APIキー</strong>（次の手順で取得します）</li>
+                <li>☐ サイトに<strong>サイトマップ</strong>があること（多くのサイトは <code>/wp-sitemap.xml</code> が自動生成されています）</li>
+            </ul>
+        </div>
+
+        <h2>ステップ1：プラグインをインストール・有効化</h2>
+        <div class="step">
+            <span class="step-number">1</span>
+            <div class="step-body"><p>プラグインのフォルダを <code>/wp-content/plugins/</code> にアップロードします（または「プラグイン &gt; 新規追加 &gt; プラグインのアップロード」からZIPを追加）。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">2</span>
+            <div class="step-body"><p>「プラグイン」一覧で <strong>Kashiwazaki SEO Concierge</strong> を「有効化」します。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">3</span>
+            <div class="step-body"><p>左メニューに「<strong>Kashiwazaki SEO Concierge</strong>」が追加されます。クリックして設定画面を開きます。</p></div>
+        </div>
+        <figure class="screenshot">
+            <img src="images/screenshots/00-menu.png" alt="管理画面メニューの位置" class="lightbox-trigger">
+            <figcaption>左メニューに追加された「Kashiwazaki SEO Concierge」</figcaption>
+        </figure>
+
+        <h2>ステップ2：APIキーを取得する</h2>
+        <p>AIを使うには「APIキー（合鍵）」が必要です。ここでは一番標準的な <strong>OpenAI</strong> を例に、流れを説明します（他社でも考え方は同じです）。</p>
+        <div class="step">
+            <span class="step-number">1</span>
+            <div class="step-body"><p><strong>アカウントを作る</strong>：OpenAI の API プラットフォーム（<code>platform.openai.com</code>）にアクセスし、アカウントを作成・ログインします。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">2</span>
+            <div class="step-body"><p><strong>支払いを設定する</strong>：「Billing（支払い）」でクレジットカードを登録し、利用を有効化します。これをしないとAPIが使えません。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">3</span>
+            <div class="step-body"><p><strong>APIキーを発行する</strong>：「API keys」のページで「Create new secret key」を押し、表示された <code>sk-</code> で始まる文字列をコピーします。<strong>この画面を閉じると二度と表示されない</strong>ので、必ずこの場でコピーしてください。</p></div>
+        </div>
+        <div class="callout callout-warning">
+            <p class="callout-title">APIキーの取り扱い注意</p>
+            <p>APIキーは「合鍵」です。他人に渡したり、公開ページ・スクリーンショットに写したりしないでください。このプラグインはキーを暗号化して保存し、フロント（訪問者側）には絶対に出しません。万一漏れたら、サービス側でそのキーを無効化（Revoke）して作り直してください。</p>
+        </div>
+
+        <h2>ステップ3：検索AIと回答AIを設定する</h2>
+        <p>設定画面の「<strong>AI・モデル</strong>」タブを開きます。①検索AI と ②回答AI を設定します。<strong>迷ったら両方とも OpenAI</strong> がおすすめです（理由とコストは<a href="ai-settings.html">AI・モデル設定</a>で解説）。</p>
+        <div class="step">
+            <span class="step-number">1</span>
+            <div class="step-body"><p><strong>①検索AI</strong>：使うサービス＝OpenAI、モデル名＝<code>text-embedding-3-small</code>、APIキー＝先ほどコピーしたキー、を入力。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">2</span>
+            <div class="step-body"><p><strong>②回答AI</strong>：使うサービス＝OpenAI、モデル名＝<code>gpt-4o-mini</code>、APIキー＝同じキー、を入力。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">3</span>
+            <div class="step-body"><p>「設定を保存」を押します。</p></div>
+        </div>
+        <figure class="screenshot">
+            <img src="images/screenshots/02-ai.png" alt="AI・モデルタブの設定画面" class="lightbox-trigger">
+            <figcaption>「AI・モデル」タブ。各項目の「?」マークにカーソルを合わせると説明が出ます</figcaption>
+        </figure>
+        <div class="callout callout-warning">
+            <p>GLM（Z.AI）や Ollama Cloud は<strong>「回答AI」専用</strong>で、「検索AI（埋め込み）」には使えません。検索AIは OpenAI などの埋め込み対応サービスを選んでください。詳しくは<a href="ai-settings.html">AI・モデル設定</a>の比較表を参照。</p>
+        </div>
+
+        <h2>ステップ4：索引（インデックス）を作る</h2>
+        <p>「<strong>インデックス</strong>」タブを開き、サイトマップのURL（通常 <code>https://あなたのサイト/wp-sitemap.xml</code>）を確認して、「<strong>今すぐ再構築</strong>」を押します。ページ数に応じて少し時間がかかります。完了するとページ数が表示されます。</p>
+        <figure class="screenshot">
+            <img src="images/screenshots/03-index.png" alt="インデックスタブ" class="lightbox-trigger">
+            <figcaption>「インデックス」タブ。サイトマップを指定して再構築します</figcaption>
+        </figure>
+        <div class="callout callout-note">
+            <p>タグやカテゴリーのページなど、案内に不要なページは「除外ルール」で外せます（例: <code>/tag/</code> や <code>/category/</code> を1行ずつ）。詳しくは<a href="index-settings.html">インデックス</a>を参照。</p>
+        </div>
+
+        <h2>ステップ5：公開前にサンドボックスでテストする</h2>
+        <p>いきなり公開せず、まず「<strong>サンドボックス</strong>」タブで動作を確認しましょう。これが「公開前の安全確認」です。</p>
+        <div class="step">
+            <span class="step-number">1</span>
+            <div class="step-body"><p>想定される質問（例:「料金は？」「〇〇について教えて」）を入力して「テスト実行」。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">2</span>
+            <div class="step-body"><p>回答文・案内される候補ページ・関連スコアが表示されます。意図したページが案内されるか確認します。</p></div>
+        </div>
+        <figure class="screenshot">
+            <img src="images/screenshots/07-sandbox.png" alt="サンドボックスタブ" class="lightbox-trigger">
+            <figcaption>「サンドボックス」タブ。公開前に回答品質を確認できます</figcaption>
+        </figure>
+        <div class="callout callout-tip">
+            <p>うまく案内されないときは、(1) 索引が作成済みか、(2) 除外しすぎていないか、(3) そもそも該当ページがサイトに存在するか、を確認しましょう。詳しくは<a href="troubleshooting.html">トラブル・FAQ</a>へ。</p>
+        </div>
+
+        <h2>ステップ6：公開して見た目を整える</h2>
+        <p>サイトを開くと、右下にチャットボタンが出ます。クリックして質問してみましょう。問題なければ公開完了です。ボタンの文言・チャットのタイトル・回答アイコン画像・色・最初のあいさつなどは「<strong>表示</strong>」タブで自由に変更できます（詳しくは<a href="display.html">表示カスタマイズ</a>）。</p>
+        <figure class="screenshot">
+            <img src="images/screenshots/21-widget-open.png" alt="実際のチャット会話例（質問・回答・案内ページ）" class="lightbox-trigger">
+            <figcaption>実際の会話例：質問すると、回答とともに関連ページが関連度スコア付きで案内されます（タイトル・回答アイコンは「表示」タブで変更可）</figcaption>
+        </figure>
+
+        <nav class="page-nav">
+            <a href="concepts.html" class="prev">&laquo; 仕組みと用語</a>
+            <a href="ai-settings.html" class="next">AI・モデル設定 &raquo;</a>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>

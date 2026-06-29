@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>プライバシー・安全 - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>プライバシー・安全</h1>
+
+        <p class="lead">「プライバシー・安全」タブには、想定外の高額請求や不正利用を防ぐための「安全装置」と、訪問者のプライバシーに関わる設定があります。公開前に必ず確認しましょう。</p>
+
+        <figure class="screenshot">
+            <img src="images/screenshots/05-privacy.png" alt="プライバシー・安全タブ" class="lightbox-trigger">
+            <figcaption>「プライバシー・安全」タブ。料金の上限と不正利用対策がまとまっています</figcaption>
+        </figure>
+
+        <h2>料金の上限（使いすぎ防止）</h2>
+        <p>AIは従量課金なので、アクセスが急増すると費用も増えます。上限を決めておけば、それ以上はAIを呼ばず「該当なし」案内に切り替わるため、安心して公開できます。</p>
+        <table>
+            <thead><tr><th style="width:34%;">項目</th><th>説明</th></tr></thead>
+            <tbody>
+                <tr><td>1日あたりのコスト上限（USD）</td><td>1日に使う金額の上限。超えるとその日はAIを呼ばなくなります。</td></tr>
+                <tr><td>1か月あたりのコスト上限（USD）</td><td>月単位の上限。月の予算に合わせて設定します。</td></tr>
+                <tr><td>トークン上限</td><td>カスタムプロバイダで単価が未設定のときの、課金の歯止めとして働く上限。</td></tr>
+            </tbody>
+        </table>
+
+        <h2>不正利用・負荷対策</h2>
+        <table>
+            <thead><tr><th style="width:34%;">項目</th><th>説明</th></tr></thead>
+            <tbody>
+                <tr><td>1日／1か月のリクエスト回数上限</td><td>質問できる回数の上限。いたずらや自動化による大量アクセスを抑えます。</td></tr>
+                <tr><td>レート制限（秒あたりの回数）</td><td>同じ訪問者が短時間に連続で質問するのを制限します（例: 60秒に20回まで）。</td></tr>
+            </tbody>
+        </table>
+        <div class="callout callout-tip">
+            <p>はじめは控えめな上限（例: 1日 $5、1か月 $50）から始め、運用しながら「<a href="analytics.html">分析</a>」で実際の利用状況を見て調整するのがおすすめです。</p>
+        </div>
+
+        <h2>プライバシー設定</h2>
+        <table>
+            <thead><tr><th style="width:34%;">項目</th><th>説明</th></tr></thead>
+            <tbody>
+                <tr><td>同意の要求</td><td>オンにすると、質問がAIに送信されることへの同意を訪問者に求めてから送信します。</td></tr>
+                <tr><td>ログの保存日数</td><td>質問・回答の履歴を何日保存するか。過ぎたものは自動で削除されます。</td></tr>
+            </tbody>
+        </table>
+
+        <h2>このプラグインが保存・保護するデータ</h2>
+        <table>
+            <thead><tr><th>データ</th><th>どこに／どう扱うか</th></tr></thead>
+            <tbody>
+                <tr><td>APIキー</td><td>暗号化して保存。<strong>フロント（訪問者側）には絶対に出力しません。</strong>他社のAIへ別社のキーが送られることもありません。</td></tr>
+                <tr><td>ページの索引・埋め込み</td><td>サイト内に保存（検索用の数値データ）。サイトの公開コンテンツから作られます。</td></tr>
+                <tr><td>質問・回答の履歴</td><td>分析用にサイト内へ保存。保存日数を過ぎると自動削除。個人情報はベストエフォートでマスク処理されます。</td></tr>
+                <tr><td>訪問者の個人情報</td><td>原則として保存しません。ログは匿名（セッションのハッシュ）で扱い、メールアドレス等とは結びつけません。</td></tr>
+            </tbody>
+        </table>
+        <div class="callout callout-note">
+            <p>質問は回答生成のためAIサービス（例: OpenAI）に送信されます。プライバシーポリシーに「サイト内検索のためAIに質問を送信する場合がある」旨を記載しておくと親切です。WordPress標準の「プライバシー」機能（データのエクスポート／消去）にも対応しています。</p>
+        </div>
+        <div class="callout callout-warning">
+            <p>コスト上限・回数上限に達すると、チャットは新しいAI回答を作らず「該当なし」案内に切り替わります。これは故障ではなく安全装置です。継続して使うには、上限の引き上げか、翌日／翌月のリセットを待ってください。</p>
+        </div>
+
+        <nav class="page-nav">
+            <a href="display.html" class="prev">&laquo; 表示カスタマイズ</a>
+            <a href="analytics.html" class="next">分析 &raquo;</a>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分析 - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>分析</h1>
+
+        <p class="lead">「分析」タブでは、訪問者がどんな質問をして、どのページが案内されたかを確認できます。これを見れば「足りないコンテンツ」や「人気のテーマ」が分かり、サイト改善に役立ちます。</p>
+
+        <figure class="screenshot">
+            <img src="images/screenshots/06-analytics.png" alt="分析タブ" class="lightbox-trigger">
+            <figcaption>「分析」タブ。集計と履歴を確認できます</figcaption>
+        </figure>
+
+        <h2>訪問者の質問と「管理者テスト」を分けて集計</h2>
+        <p>あなた自身がログインした状態でチャットを試した質問は「<strong>管理者テスト</strong>」として別枠で数えられ、訪問者の集計（人気質問・コンテンツギャップ）には<strong>含まれません</strong>。これにより、あなたの動作確認が実際の利用データを汚すことがありません。画面上部のカードに「訪問者の質問」と「管理者テスト」の件数が別々に表示されます。</p>
+
+        <h2>3つの集計</h2>
+        <div class="feature-cards">
+            <div class="feature-card">
+                <h3>よく聞かれる質問</h3>
+                <p>訪問者から多かった質問の上位。ニーズの高いテーマが分かります。</p>
+            </div>
+            <div class="feature-card">
+                <h3>ヒットしなかった質問</h3>
+                <p>適切なページを案内できなかった質問（コンテンツギャップ）。<strong>次に作るべき記事のヒント</strong>になります。</p>
+            </div>
+            <div class="feature-card">
+                <h3>質問と回答の履歴</h3>
+                <p>日時・種別・質問・回答・案内したURL・結果を一覧。20件ごとにページ送りできます。</p>
+            </div>
+        </div>
+
+        <h2>履歴の見方</h2>
+        <table>
+            <thead><tr><th style="width:20%;">列</th><th>説明</th></tr></thead>
+            <tbody>
+                <tr><td>日時</td><td>質問が行われた日時。</td></tr>
+                <tr><td>種別</td><td><span style="color:#1e7e34;font-weight:600;">訪問者</span>（実データ）か <span style="color:#b26a00;font-weight:600;">管理者テスト</span>（ログイン中のあなた）かを色付きで表示。</td></tr>
+                <tr><td>質問・回答・案内したURL</td><td>訪問者の質問、ボットの回答、案内した候補ページ。訪問者が実際にクリックしたURLには緑の「✓」が付きます。</td></tr>
+                <tr><td>結果</td><td><span style="color:#1e7e34;font-weight:600;">回答</span>（案内できた）か <span style="color:#b32d2e;font-weight:600;">未ヒット</span>（該当なし）か。</td></tr>
+            </tbody>
+        </table>
+
+        <h2>CSVエクスポート</h2>
+        <p>「すべてのログをCSVエクスポート」を押すと、履歴をCSVファイルとしてダウンロードできます。スプレッドシートなどで詳しく分析したいときに使います。</p>
+
+        <div class="callout callout-note">
+            <p>履歴は「<a href="privacy-safety.html">プライバシー・安全</a>」で設定した保存日数を過ぎると自動的に削除されます。古いものから消えるため、件数が無制限に増え続けることはありません。</p>
+        </div>
+        <div class="callout callout-tip">
+            <p><strong>活用のヒント</strong>：「ヒットしなかった質問」に同じテーマが何度も出てくるなら、それは訪問者が求めているのに用意できていない情報です。その記事を新しく作り、索引を再構築すれば、次からはきちんと案内できるようになります。</p>
+        </div>
+
+        <nav class="page-nav">
+            <a href="privacy-safety.html" class="prev">&laquo; プライバシー・安全</a>
+            <a href="troubleshooting.html" class="next">トラブル・FAQ &raquo;</a>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>

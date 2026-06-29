@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI・モデル設定 - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>AI・モデル設定</h1>
+
+        <p class="lead">「AI・モデル」タブでは、①検索AI（探す係）と ②回答AI（答える係）に、それぞれどのサービス（プロバイダ）とモデルを使うかを設定します。役割の違いがピンとこない方は、先に<a href="concepts.html">仕組みと用語</a>を読んでください。</p>
+
+        <figure class="screenshot">
+            <img src="images/screenshots/02-ai.png" alt="AI・モデルタブ全体" class="lightbox-trigger">
+            <figcaption>「AI・モデル」タブ：①検索AI ②回答AI ③詳細設定 の3ブロック</figcaption>
+        </figure>
+
+        <h2>各項目の意味</h2>
+        <table>
+            <thead><tr><th style="width:26%;">項目</th><th>意味</th></tr></thead>
+            <tbody>
+                <tr><td>使うサービス</td><td>AIを提供する会社（プロバイダ）。OpenAI / GLM(Z.AI) / Ollama Cloud / カスタム。</td></tr>
+                <tr><td>接続先URL</td><td>サービスのAPIの住所。OpenAIなら自動で <code>https://api.openai.com/v1</code> が入ります。通常は変更不要。</td></tr>
+                <tr><td>APIキー</td><td>各自がアカウントで発行した合鍵。暗号化して保存され、訪問者には出ません。</td></tr>
+                <tr><td>モデル名</td><td>使うAIの種類。検索AIは <code>text-embedding-3-small</code>、回答AIは <code>gpt-4o-mini</code> が標準。</td></tr>
+                <tr><td>次元数</td><td>検索AI（埋め込み）の数値の長さ。<code>text-embedding-3-small</code> なら <code>1536</code>。通常は既定のままでOK。</td></tr>
+            </tbody>
+        </table>
+
+        <h2>プロバイダ能力比較（重要）</h2>
+        <p>プロバイダによって「検索（埋め込み）に使えるか」「回答（チャット）に使えるか」が違います。<strong>ここを間違えると設定が完了しません。</strong></p>
+        <table>
+            <thead><tr><th>プロバイダ</th><th>検索AI（埋め込み）</th><th>回答AI（チャット）</th><th>メモ</th></tr></thead>
+            <tbody>
+                <tr><td><strong>OpenAI</strong></td><td>○ 使える</td><td>○ 使える</td><td>両方OK。迷ったらこれ。</td></tr>
+                <tr><td>GLM（Z.AI）</td><td>✗ 使えない</td><td>○ 使える</td><td>回答専用。検索には別途OpenAI等が必要。</td></tr>
+                <tr><td>Ollama Cloud</td><td>✗ 使えない</td><td>○ 使える</td><td>回答専用。検索には別途OpenAI等が必要。</td></tr>
+                <tr><td>カスタム</td><td>対応による</td><td>対応による</td><td>OpenAI互換APIの独自エンドポイント向け（上級者）。</td></tr>
+            </tbody>
+        </table>
+        <div class="callout callout-tip">
+            <p><strong>初心者へのおすすめ</strong>：検索AI・回答AIの<strong>両方を OpenAI</strong> にすれば確実に動きます。回答AIだけ GLM や Ollama に変えることもできますが、その場合も<strong>検索AIは OpenAI 等のまま</strong>にしてください。</p>
+        </div>
+
+        <h2>おすすめモデル</h2>
+        <table>
+            <thead><tr><th>役割</th><th>おすすめモデル</th><th>理由</th></tr></thead>
+            <tbody>
+                <tr><td>検索AI</td><td><code>text-embedding-3-small</code></td><td>安価で十分な精度。次元数は <code>1536</code>。</td></tr>
+                <tr><td>回答AI</td><td><code>gpt-4o-mini</code></td><td>応答が速く、1回あたりの費用が小さく、実用十分。</td></tr>
+            </tbody>
+        </table>
+
+        <h2>コストの考え方</h2>
+        <p>AIの利用は<strong>従量課金</strong>（使った分だけ支払い）です。料金の単価はサービス各社がときどき改定するため、このマニュアルには金額表を載せていません。<strong>最新の単価は必ず各社の公式料金ページで確認してください。</strong>大切なのは「どういうときに費用がかかるか」という仕組みと、使いすぎを防ぐ仕組みです。</p>
+        <div class="feature-cards">
+            <div class="feature-card">
+                <h3>索引作成のコスト</h3>
+                <p>検索AI（埋め込み）は、<strong>索引を作る／作り直すときにまとめて1回</strong>だけかかります。日々の質問では発生しません。</p>
+            </div>
+            <div class="feature-card">
+                <h3>回答のコスト</h3>
+                <p>回答AIは、<strong>質問が来るたびに少額</strong>かかります。アクセスが増えるほど積み上がります。</p>
+            </div>
+        </div>
+
+        <h3>最新の料金は公式ページで確認</h3>
+        <ul>
+            <li>OpenAI: <a href="https://openai.com/api/pricing/" target="_blank" rel="noopener">https://openai.com/api/pricing/</a></li>
+            <li>GLM（Z.AI）: <a href="https://z.ai/" target="_blank" rel="noopener">https://z.ai/</a></li>
+            <li>Ollama Cloud: <a href="https://ollama.com/" target="_blank" rel="noopener">https://ollama.com/</a></li>
+        </ul>
+
+        <div class="callout callout-tip">
+            <p class="callout-title">使いすぎ防止はプラグイン側で</p>
+            <p>料金が不安でも大丈夫です。「<a href="privacy-safety.html">プライバシー・安全</a>」タブで<strong>1日・1か月のコスト上限（USD）</strong>と<strong>1日・1か月のリクエスト回数上限</strong>を設定できます。上限に達すると、それ以上はAIを呼ばず「該当なし」案内に切り替わるので、想定外の高額請求を防げます。料金改定があってもこの安全装置は有効です。</p>
+        </div>
+
+        <h2>③ 詳細設定（通常は変更不要）</h2>
+        <table>
+            <thead><tr><th style="width:30%;">項目</th><th>説明</th></tr></thead>
+            <tbody>
+                <tr><td>検索する候補ページ数</td><td>1回の質問で検索AIが拾う候補の数（既定 10）。多いほど丁寧ですが費用も増えます。</td></tr>
+                <tr><td>AIへの指示文（任意）</td><td>回答AIへの追加の口調・方針の指示。空欄でOK。</td></tr>
+                <tr><td>回答の出力形式</td><td>「自動（おすすめ）」のままで問題ありません。</td></tr>
+                <tr><td>カスタムの入力／出力単価</td><td>カスタムプロバイダを使う上級者向け。0（未設定）の場合はトークン上限が課金の歯止めとして働きます。</td></tr>
+            </tbody>
+        </table>
+
+        <nav class="page-nav">
+            <a href="setup.html" class="prev">&laquo; インストール・初期設定</a>
+            <a href="index-settings.html" class="next">インデックス（索引） &raquo;</a>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>

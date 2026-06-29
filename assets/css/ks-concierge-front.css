@@ -1,0 +1,274 @@
+/* Kashiwazaki SEO Concierge — front-end widget styles. */
+.ks-concierge,
+.ks-concierge * {
+	box-sizing: border-box;
+}
+
+.ks-concierge__tab {
+	position: fixed;
+	right: 20px;
+	bottom: 20px;
+	z-index: 99999;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 18px;
+	border: none;
+	border-radius: 999px;
+	background: var(--ks-accent, #1e73be);
+	color: #fff;
+	font-size: 15px;
+	line-height: 1.4;
+	cursor: pointer;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.ks-concierge__tab:focus-visible {
+	outline: 3px solid #fff;
+	outline-offset: 2px;
+}
+
+.ks-concierge__tab-icon {
+	font-size: 20px;
+	line-height: 1;
+}
+
+.ks-concierge__panel {
+	position: fixed;
+	right: 20px;
+	bottom: 84px;
+	z-index: 99999;
+	display: flex;
+	flex-direction: column;
+	width: 360px;
+	max-width: calc(100vw - 40px);
+	height: 520px;
+	max-height: calc(100vh - 120px);
+	background: #fff;
+	border-radius: 14px;
+	box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+	overflow: hidden;
+	transform-origin: bottom right;
+}
+
+/* "ビヨーン" spring-out when the panel opens. */
+.ks-concierge__panel:not([hidden]) {
+	animation: ks-concierge-pop 0.34s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes ks-concierge-pop {
+	0% {
+		transform: scale(0.6) translateY(24px);
+		opacity: 0;
+	}
+	60% {
+		transform: scale(1.04) translateY(0);
+		opacity: 1;
+	}
+	100% {
+		transform: scale(1);
+	}
+}
+
+.ks-concierge__panel[hidden] {
+	display: none;
+}
+
+/* Small screens: collapse the wide pill to a compact icon-only tab so it does
+   not overlap scroll-to-top / other floating buttons. */
+@media (max-width: 600px) {
+	.ks-concierge__tab {
+		width: 52px;
+		height: 52px;
+		padding: 0;
+		justify-content: center;
+		gap: 0;
+		right: 14px;
+		bottom: 14px;
+	}
+
+	.ks-concierge__tab-text {
+		display: none;
+	}
+
+	.ks-concierge__tab-icon {
+		font-size: 26px;
+	}
+}
+
+.ks-concierge__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 16px;
+	background: var(--ks-accent, #1e73be);
+	color: #fff;
+}
+
+.ks-concierge__header h2 {
+	margin: 0;
+	font-size: 15px;
+	color: #fff;
+}
+
+.ks-concierge__close {
+	background: transparent;
+	border: none;
+	color: #fff;
+	font-size: 20px;
+	line-height: 1;
+	cursor: pointer;
+	padding: 4px;
+}
+
+.ks-concierge__close:focus-visible {
+	outline: 2px solid #fff;
+}
+
+.ks-concierge__messages {
+	flex: 1;
+	overflow-y: auto;
+	padding: 14px;
+	background: #f6f7f9;
+}
+
+.ks-concierge__msg {
+	margin: 0 0 12px;
+	padding: 10px 12px;
+	border-radius: 10px;
+	font-size: 14px;
+	line-height: 1.6;
+	max-width: 90%;
+}
+
+.ks-concierge__msg--bot {
+	background: #fff;
+	border: 1px solid #e2e4e8;
+}
+
+.ks-concierge__row--bot {
+	display: flex;
+	flex-direction: row-reverse;
+	justify-content: flex-start;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 0 0 12px;
+}
+
+.ks-concierge__row--bot .ks-concierge__msg {
+	margin: 0;
+}
+
+.ks-concierge__avatar {
+	width: 32px;
+	height: 32px;
+	flex: 0 0 32px;
+	border-radius: 50%;
+	object-fit: cover;
+	border: 1px solid #e2e4e8;
+	background: #fff;
+}
+
+.ks-concierge__msg--user {
+	background: var(--ks-accent, #1e73be);
+	color: #fff;
+	margin-right: auto;
+}
+
+.ks-concierge__cards {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.ks-concierge__card {
+	display: block;
+	padding: 10px 12px;
+	border: 1px solid #e2e4e8;
+	border-radius: 10px;
+	background: #fff;
+	text-decoration: none;
+	color: inherit;
+}
+
+.ks-concierge__card:hover,
+.ks-concierge__card:focus-visible {
+	border-color: var(--ks-accent, #1e73be);
+	outline: none;
+}
+
+.ks-concierge__card-title {
+	font-weight: 600;
+	font-size: 14px;
+	color: var(--ks-accent, #1e73be);
+}
+
+.ks-concierge__card-reason {
+	font-size: 13px;
+	color: #444;
+	margin-top: 2px;
+}
+
+.ks-concierge__card-meta {
+	font-size: 11px;
+	color: #888;
+	margin-top: 4px;
+}
+
+.ks-concierge__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 0 14px 8px;
+	background: #f6f7f9;
+}
+
+.ks-concierge__chip {
+	border: 1px solid var(--ks-accent, #1e73be);
+	color: var(--ks-accent, #1e73be);
+	background: #fff;
+	border-radius: 999px;
+	padding: 5px 12px;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.ks-concierge__form {
+	display: flex;
+	gap: 8px;
+	padding: 10px;
+	border-top: 1px solid #e2e4e8;
+	background: #fff;
+}
+
+.ks-concierge__input {
+	flex: 1;
+	padding: 9px 12px;
+	border: 1px solid #ccd0d6;
+	border-radius: 8px;
+	font-size: 14px;
+}
+
+.ks-concierge__send {
+	border: none;
+	background: var(--ks-accent, #1e73be);
+	color: #fff;
+	border-radius: 8px;
+	padding: 0 16px;
+	cursor: pointer;
+	font-size: 14px;
+}
+
+.ks-concierge__typing {
+	font-size: 13px;
+	color: #888;
+	font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ks-concierge * {
+		transition: none !important;
+		animation: none !important;
+	}
+}

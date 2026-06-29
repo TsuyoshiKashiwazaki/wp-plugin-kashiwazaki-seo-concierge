@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>表示カスタマイズ - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>表示カスタマイズ</h1>
+
+        <p class="lead">「表示」タブでは、チャットの見た目や文言を自由に変えられます。難しい設定はなく、文字や色を入力するだけです。</p>
+
+        <figure class="screenshot">
+            <img src="images/screenshots/04-display.png" alt="表示タブ" class="lightbox-trigger">
+            <figcaption>「表示」タブ。各項目の「?」マークで説明が出ます</figcaption>
+        </figure>
+
+        <h2>設定できる項目</h2>
+        <table>
+            <thead><tr><th style="width:30%;">項目</th><th>説明</th></tr></thead>
+            <tbody>
+                <tr><td>チャットを開くボタンの文言</td><td>画面右下のボタンの文字。空欄なら「なにかお探しですか？」になります。</td></tr>
+                <tr><td>チャット画面のタイトル</td><td>チャットを開いたとき上部に出る見出し。空欄なら「Kashiwazaki SEO Concierge」。例:「〇〇をご案内いたします。」</td></tr>
+                <tr><td>回答アイコン画像</td><td>ボットの回答の横に出すアイコン。ロボットの絵でも、ご自身の顔写真でもOK。「メディアから選択」で画像を選べます。空欄なら表示されません。</td></tr>
+                <tr><td>テーマカラー</td><td>チャットの色。<code>#1e73be</code> のような「#」付きのカラーコードで指定します。</td></tr>
+                <tr><td>最初に表示するあいさつ</td><td>チャットを開いたとき最初に出るメッセージ。</td></tr>
+                <tr><td>質問の例（クリックで送信）</td><td>入力欄の上に出す質問例。1行に1つ。訪問者がクリックするとその質問が送られます。</td></tr>
+                <tr><td>チャットを表示するページ</td><td>全ページ／トップページのみ／個別の投稿・固定ページのみ、から選べます。通常は「全ページ」でOK。</td></tr>
+                <tr><td>GA4 測定ID（任意）</td><td>Googleアナリティクス4で利用状況を計測する場合のID（<code>G-XXXXXXX</code>）。不要なら空欄でOK。</td></tr>
+            </tbody>
+        </table>
+
+        <h2>回答アイコン画像の設定手順</h2>
+        <div class="step">
+            <span class="step-number">1</span>
+            <div class="step-body"><p>「回答アイコン画像」の「メディアから選択」ボタンを押します。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">2</span>
+            <div class="step-body"><p>WordPressのメディアライブラリから画像を選ぶ（または新しくアップロード）。正方形の画像がおすすめです。</p></div>
+        </div>
+        <div class="step">
+            <span class="step-number">3</span>
+            <div class="step-body"><p>プレビューを確認して「設定を保存」。チャットの回答の横に表示されます。</p></div>
+        </div>
+
+        <h2>パソコンでの表示</h2>
+        <p>パソコン（広い画面）では、右下に文言入りの横長ボタン（ピル型）が表示されます。クリックするとチャットが開きます。</p>
+        <figure class="screenshot">
+            <img src="images/screenshots/20-widget-pill.png" alt="PCでの横長チャットボタン" class="lightbox-trigger">
+            <figcaption>パソコンでは文言入りの横長ボタンが右下に出ます</figcaption>
+        </figure>
+
+        <h2>スマートフォンでの表示</h2>
+        <p>画面幅が狭いスマホでは、横長のボタンだと他の固定ボタン（ページトップへ戻る等）と重なってしまいます。そこでスマホでは、自動的に<strong>小さな丸い「💁」ボタン</strong>になり、タップするとチャットがふわっと開きます。設定は不要で、自動で切り替わります。</p>
+        <figure class="screenshot">
+            <img src="images/screenshots/22-widget-mobile.png" alt="スマホでの小さな💁タブ表示" class="lightbox-trigger">
+            <figcaption>スマホでは右下に小さな「💁」ボタンが出ます（タップで展開）</figcaption>
+        </figure>
+
+        <h2>（任意）GA4で記録されるイベント</h2>
+        <p>「GA4 測定ID」を設定すると、チャットの利用状況がGoogleアナリティクス4（GA4）に記録されます（プラグインが新しい計測タグを読み込むことはなく、サイトに既にあるGoogleタグを利用します）。GA4で次のイベント名を探すと、利用状況を確認できます。</p>
+        <table>
+            <thead><tr><th>イベント名</th><th>記録されるタイミング</th></tr></thead>
+            <tbody>
+                <tr><td><code>ks_concierge_open</code></td><td>訪問者がチャットを開いた</td></tr>
+                <tr><td><code>ks_concierge_ask</code></td><td>訪問者が質問を送信した</td></tr>
+                <tr><td><code>ks_concierge_click</code></td><td>案内された候補ページのリンクをクリックした</td></tr>
+                <tr><td><code>ks_concierge_fallback</code></td><td>該当ページが見つからず「該当なし」案内になった</td></tr>
+            </tbody>
+        </table>
+        <div class="callout callout-note">
+            <p>GA4の「リアルタイム」または「エンゲージメント &gt; イベント」で <code>ks_concierge_</code> を探すと一覧できます。質問文などの個人情報は送られず、イベント名のみが記録されます。GA4を使っていない場合は、この設定は空欄のままで問題ありません。</p>
+        </div>
+
+        <nav class="page-nav">
+            <a href="index-settings.html" class="prev">&laquo; インデックス（索引）</a>
+            <a href="privacy-safety.html" class="next">プライバシー・安全 &raquo;</a>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>

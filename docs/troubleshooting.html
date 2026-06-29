@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>トラブル・FAQ - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>トラブル・FAQ</h1>
+
+        <p class="lead">よくあるトラブルと解決方法、そしてよくある質問（FAQ）をまとめました。困ったときはまずここを確認してください。</p>
+
+        <h2>トラブルシューティング</h2>
+
+        <h3>チャットボタンがサイトに表示されない</h3>
+        <ul>
+            <li>プラグインが「有効化」されているか確認します。</li>
+            <li>「<a href="display.html">表示</a>」タブの「チャットを表示するページ」が、見ているページと合っているか確認します（例:「トップページのみ」になっていないか）。</li>
+            <li><strong>ブラウザのキャッシュ</strong>が原因のこともあります。スーパーリロード（Windows: <code>Ctrl+Shift+R</code> / Mac: <code>Cmd+Shift+R</code>）を試します。</li>
+            <li>キャッシュ系プラグインやPWA（Service Worker）を使っている場合は、後述の「キャッシュ」の項目を参照。</li>
+        </ul>
+
+        <h3>「該当するページが見つかりませんでした」ばかり出る</h3>
+        <ul>
+            <li>「<a href="index-settings.html">インデックス</a>」で索引が作成済みか（ページ数が表示されるか）を確認します。未作成なら「今すぐ再構築」。</li>
+            <li>質問に対応するページがサイトに実在するか確認します。無いテーマは案内できません（「<a href="analytics.html">分析</a>」のコンテンツギャップが参考になります）。</li>
+            <li>除外ルールで対象を外しすぎていないか確認します。</li>
+            <li>コスト上限・回数上限に達していないか（「<a href="privacy-safety.html">プライバシー・安全</a>」）。達していると安全装置で「該当なし」に切り替わります。</li>
+        </ul>
+
+        <h3>「通信エラーが発生しました」と出る</h3>
+        <ul>
+            <li>APIキーが正しいか（「<a href="ai-settings.html">AI・モデル</a>」タブ）。キーの打ち間違い・期限切れ・無効化に注意。</li>
+            <li>AIサービス側で支払い設定（課金）が有効になっているか。</li>
+            <li>サーバーから外部（AIサービス）への通信がブロックされていないか。レンタルサーバーの設定や、外部接続を制限するプラグイン・定数に注意。</li>
+            <li>選んだAIサービスが一時的に混雑している場合があります。少し時間をおいて再度試します。</li>
+        </ul>
+
+        <h3>回答が英語になってしまう</h3>
+        <ul>
+            <li>本プラグインは日本語で質問されれば日本語で答えるように作られています。改善版で対策済みです。最新版を使っているか確認してください。</li>
+            <li>「<a href="ai-settings.html">AI・モデル</a>」の「AIへの指示文」に英語の指示が入っていないか確認します。</li>
+        </ul>
+
+        <h3>設定を変えたのに反映されない（キャッシュ）</h3>
+        <ul>
+            <li>まずスーパーリロード（<code>Ctrl+Shift+R</code> / <code>Cmd+Shift+R</code>）。</li>
+            <li><strong>PWA（Service Worker）</strong>を導入している場合、通常のリロードでは古い表示が残ることがあります。<strong>シークレット／プライベートウィンドウ</strong>で開くと確実に最新が表示されます。または、ブラウザの開発者ツールで「Service Worker の登録解除」「サイトデータの消去」を行います。</li>
+            <li>キャッシュ系プラグインを使っている場合は、そのプラグインでキャッシュを削除します。</li>
+        </ul>
+
+        <h3>索引の再構築が終わらない／時間がかかる</h3>
+        <ul>
+            <li>ページ数が多いと時間がかかります。完了表示が出るまで待ちます。</li>
+            <li>検索AIのAPIキー・支払い設定を確認します。</li>
+            <li>コスト上限に達していると途中で止まります。上限を確認します。</li>
+        </ul>
+
+        <h2>よくある質問（FAQ）</h2>
+
+        <div class="callout callout-note">
+            <p class="callout-title">Q. 無料で使えますか？</p>
+            <p>プラグイン自体は使えますが、AIの利用は各サービスの<strong>従量課金</strong>です。OpenAI 等のアカウントと支払い設定が必要です。使いすぎは「<a href="privacy-safety.html">プライバシー・安全</a>」の上限で防げます。</p>
+        </div>
+        <div class="callout callout-note">
+            <p class="callout-title">Q. どのAIサービスを選べばいいですか？</p>
+            <p>迷ったら検索AI・回答AIの<strong>両方を OpenAI</strong>。回答AIだけ GLM や Ollama に変えることもできますが、検索AIは OpenAI 等の埋め込み対応サービスが必要です（<a href="ai-settings.html">比較表</a>）。</p>
+        </div>
+        <div class="callout callout-note">
+            <p class="callout-title">Q. APIキーは安全に保管されますか？</p>
+            <p>はい。キーは暗号化して保存し、<strong>フロント（訪問者側）には一切出力しません</strong>。万一漏れた場合は、サービス側でそのキーを無効化して作り直してください。</p>
+        </div>
+        <div class="callout callout-note">
+            <p class="callout-title">Q. 記事を追加したら、何かする必要がありますか？</p>
+            <p>「<a href="index-settings.html">インデックス</a>」で索引を再構築すると新しい記事が案内対象になります。自動（定期）再構築を設定しておけば手間がかかりません。</p>
+        </div>
+        <div class="callout callout-note">
+            <p class="callout-title">Q. 自分でテストした質問は分析に混ざりますか？</p>
+            <p>混ざりません。ログイン中のあなたの質問は「管理者テスト」として別枠で集計され、訪問者の集計には含まれません（<a href="analytics.html">分析</a>）。</p>
+        </div>
+        <div class="callout callout-note">
+            <p class="callout-title">Q. タグやカテゴリーのページを案内させたくない</p>
+            <p>「<a href="index-settings.html">インデックス</a>」の除外ルールに <code>/tag/</code> や <code>/category/</code> を1行ずつ追加して再構築してください。いつでも解除できます。</p>
+        </div>
+        <div class="callout callout-note">
+            <p class="callout-title">Q. スマホでチャットボタンが小さい「💁」になるのはなぜ？</p>
+            <p>仕様です。スマホでは他の固定ボタンと重ならないよう、自動的に小さな丸ボタンになります。タップで通常どおり開きます（<a href="display.html">表示カスタマイズ</a>）。</p>
+        </div>
+
+        <nav class="page-nav">
+            <a href="analytics.html" class="prev">&laquo; 分析</a>
+            <span></span>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>

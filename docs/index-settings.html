@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>インデックス（索引） - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>インデックス（索引）</h1>
+
+        <p class="lead">「インデックス」タブでは、AIが検索の材料にする「索引」を作ります。索引はサイトのページをAIが読み込んで作るデータで、これがないとチャットは何も案内できません。</p>
+
+        <figure class="screenshot">
+            <img src="images/screenshots/03-index.png" alt="インデックスタブ" class="lightbox-trigger">
+            <figcaption>「インデックス」タブ。サイトマップの指定と再構築を行います</figcaption>
+        </figure>
+
+        <h2>索引の材料：サイトマップと llms.txt</h2>
+        <table>
+            <thead><tr><th style="width:26%;">材料</th><th>説明</th></tr></thead>
+            <tbody>
+                <tr><td>サイトマップ</td><td>サイト内ページの一覧（通常 <code>/wp-sitemap.xml</code>）。ここに載っているページが索引の対象になります。</td></tr>
+                <tr><td>llms.txt（任意）</td><td>AI向けにサイトの要点をまとめたテキスト。あれば索引の補助に使われます。無くても動作します。</td></tr>
+            </tbody>
+        </table>
+        <div class="callout callout-note">
+            <p>サイトマップのURLが分からない場合は、ブラウザで <code>https://あなたのサイト/wp-sitemap.xml</code> を開いてみてください。XMLが表示されればそれが使えます。表示されない場合は、SEOプラグインのサイトマップURL（例: <code>/sitemap.xml</code>）を指定します。</p>
+        </div>
+        <p>サイトマップ／llms.txt のURLは「一般」タブで設定します。</p>
+        <figure class="screenshot">
+            <img src="images/screenshots/01-general.png" alt="一般タブ（サイトマップ・llms.txtのURL設定）" class="lightbox-trigger">
+            <figcaption>「一般」タブ。サイトマップ／llms.txt のURLなど全体に関わる基本設定を行います</figcaption>
+        </figure>
+
+        <h2>索引を作る・作り直す（再構築）</h2>
+        <p>ページを追加・更新したら索引を作り直すと、最新の内容が案内に反映されます。再構築には2つの方法があります。</p>
+        <div class="feature-cards">
+            <div class="feature-card">
+                <h3>手動で再構築</h3>
+                <p>「今すぐ再構築」ボタンを押すと、その場で索引を作り直します。設定直後や、まとめて記事を更新した直後に使います。</p>
+            </div>
+            <div class="feature-card">
+                <h3>自動（定期）再構築</h3>
+                <p>WordPressの定期処理（cron）で、決めた間隔で自動的に再構築します。更新が多いサイトは自動にしておくと手間がかかりません。</p>
+            </div>
+        </div>
+        <div class="callout callout-tip">
+            <p><strong>使い分けの目安</strong>：記事をたまに書くサイトは「手動」で十分。頻繁に更新するサイトは「自動」にしておくと、案内が常に最新に保たれます。なお、再構築のたびに検索AI（埋め込み）の費用が少しかかります（<a href="ai-settings.html">コストの考え方</a>）。</p>
+        </div>
+        <div class="callout callout-warning">
+            <p>WordPressのcronはサイトへのアクセスをきっかけに動きます。アクセスが極端に少ないサイトでは定期再構築が遅れることがあります。確実に最新化したいときは「今すぐ再構築」を使ってください。</p>
+        </div>
+
+        <h2>不要なページを除外する（除外ルール）</h2>
+        <p>タグ一覧やカテゴリー一覧など、案内先として不要なページは「除外ルール」で索引から外せます。<strong>パスの一部分を1行に1つ</strong>書くと、それを含むURLが除外されます。</p>
+        <table>
+            <thead><tr><th style="width:30%;">入力例</th><th>意味</th></tr></thead>
+            <tbody>
+                <tr><td><code>/tag/</code></td><td>URLに <code>/tag/</code> を含むページ（タグ一覧）を除外</td></tr>
+                <tr><td><code>/category/</code></td><td>URLに <code>/category/</code> を含むページ（カテゴリー一覧）を除外</td></tr>
+                <tr><td><code>/author/</code></td><td>URLに <code>/author/</code> を含むページ（著者アーカイブ）を除外</td></tr>
+            </tbody>
+        </table>
+        <div class="callout callout-note">
+            <p>除外ルールは<strong>ハードコードではなく、いつでも変更・解除できます</strong>。ルールを消して再構築すれば、また案内対象に戻ります。除外しても、すでに作った検索用データは保持されるため、解除しても再びすぐ検索対象になります。</p>
+        </div>
+
+        <h2>うまく索引できないときは</h2>
+        <ul>
+            <li>サイトマップURLが正しいか（ブラウザで開けるか）を確認</li>
+            <li>検索AI（埋め込み）のAPIキーが「<a href="ai-settings.html">AI・モデル</a>」タブで設定済みか</li>
+            <li>「<a href="privacy-safety.html">プライバシー・安全</a>」のコスト上限に達していないか</li>
+            <li>除外ルールで対象を外しすぎていないか</li>
+        </ul>
+        <p>さらに詳しくは<a href="troubleshooting.html">トラブル・FAQ</a>を参照してください。</p>
+
+        <nav class="page-nav">
+            <a href="ai-settings.html" class="prev">&laquo; AI・モデル設定</a>
+            <a href="display.html" class="next">表示カスタマイズ &raquo;</a>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>

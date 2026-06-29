@@ -1,0 +1,57 @@
+# === AI / 開発ツール設定（公開リポジトリに入れない） ===
+CLAUDE.md
+.codex
+.codex/
+.agents/
+.cursor/
+.aider*
+.copilot/
+.github/copilot/
+.playwright-mcp/
+.3ai-work/
+
+# === 開発作業の一時ファイル ===
+ai-tab.yml
+.tmp/
+/-f
+/-t
+/-t.progress
+
+# === スクリーンショット・ゴミ（ルートレベルのみ。docs/images の画像は対象外） ===
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.bmp
+/*.md.bak
+
+# === 依存管理（WP プラグインでは配布しない） ===
+/vendor/
+/node_modules/
+composer.json
+composer.lock
+package.json
+package-lock.json
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === ビルド ===
+/build/
+/dist/
+*.log
+
+# === PHPUnit ===
+.phpunit.result.cache
+.phpunit.cache/
+
+# === WordPress（誤コミット防止） ===
+wp-config.php

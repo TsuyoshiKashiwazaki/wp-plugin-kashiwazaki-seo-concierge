@@ -1,0 +1,30 @@
+/* Kashiwazaki SEO Concierge — admin styles. */
+.ks-concierge-admin .ks-sandbox-result {
+	margin-top: 14px;
+	padding: 12px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 6px;
+	max-width: 760px;
+}
+
+.ks-concierge-admin .ks-sandbox-card {
+	padding: 8px 10px;
+	border: 1px solid #e2e4e8;
+	border-radius: 6px;
+	margin-top: 8px;
+}
+
+.ks-concierge-admin .ks-sandbox-card a {
+	font-weight: 600;
+}
+
+.ks-concierge-admin .ks-sandbox-meta {
+	color: #777;
+	font-size: 12px;
+}
+
+/* Chat reply icon picker */
+.ks-image-field { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ks-image-field__preview { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 1px solid #c3c4c7; background: #fff; }
+.ks-image-field .description { flex-basis: 100%; margin: 4px 0 0; }

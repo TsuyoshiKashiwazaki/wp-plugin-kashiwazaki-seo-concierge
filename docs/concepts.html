@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>仕組みと用語 - Kashiwazaki SEO Concierge マニュアル</title>
+    <link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+    <button class="hamburger-btn" aria-label="メニューを開く">&#9776;</button>
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
+            <span class="version">v1.0.0</span>
+            <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
+        </div>
+        <ul>
+            <li><a href="index.html">概要</a></li>
+            <li><a href="concepts.html">仕組みと用語</a></li>
+            <li><a href="setup.html">インストール・初期設定</a></li>
+            <li><a href="ai-settings.html">AI・モデル設定</a></li>
+            <li><a href="index-settings.html">インデックス（索引）</a></li>
+            <li><a href="display.html">表示カスタマイズ</a></li>
+            <li><a href="privacy-safety.html">プライバシー・安全</a></li>
+            <li><a href="analytics.html">分析</a></li>
+            <li><a href="troubleshooting.html">トラブル・FAQ</a></li>
+        </ul>
+    </nav>
+    <main class="content">
+        <h1>仕組みと用語</h1>
+
+        <p class="lead">設定を始める前に、このプラグインがどう動くのか、そして設定画面に出てくる言葉の意味を、やさしく整理します。ここを読んでおくと、後の設定で迷いません。</p>
+
+        <h2>どうやって質問に答えているの？</h2>
+        <p>このプラグインは、2つのAIが役割分担して動きます。</p>
+        <div class="feature-cards">
+            <div class="feature-card">
+                <h3>① 検索AI（探す係）</h3>
+                <p>訪問者の質問に「意味が近い」ページを、あらかじめ作っておいた索引の中から探します。キーワードが一致していなくても、意味が近ければ見つけられます。</p>
+            </div>
+            <div class="feature-card">
+                <h3>② 回答AI（答える係）</h3>
+                <p>検索AIが見つけたページの内容をもとに、訪問者へのやさしい回答文を作り、「このページが参考になります」と案内します。</p>
+            </div>
+        </div>
+
+        <figure class="infographic">
+            <img src="images/infographics/how-it-works.png" alt="検索AIと回答AIの役割分担の図" class="lightbox-trigger">
+            <figcaption>図: 質問 → 検索AIが関連ページを探す → 回答AIが案内文を作る、という流れ</figcaption>
+        </figure>
+
+        <div class="callout callout-tip">
+            <p><strong>なぜ2つに分かれているの？</strong> — 「探す」のが得意なAIと「文章を作る」のが得意なAIは別々に選べた方が、品質とコストのバランスを取りやすいからです。たとえば「探す＝OpenAI、答える＝OpenAI」のように、サービスを別々に指定できます（詳しくは<a href="ai-settings.html">AI・モデル設定</a>）。</p>
+        </div>
+
+        <h2>「索引（インデックス）」とは？</h2>
+        <p>訪問者が質問するたびにサイト全体を読み直していたら、とても遅くて高コストです。そこで<strong>あらかじめ全ページをAIが読み込んで、検索しやすい形に変換して保存</strong>しておきます。これが「索引（インデックス）」です。図書館の索引と同じで、一度作っておけば素早く目的のページを引けます。</p>
+        <p>ページを追加・更新したら、索引を作り直す（再構築する）と最新の内容が反映されます。自動の定期再構築も設定できます（詳しくは<a href="index-settings.html">インデックス</a>）。</p>
+
+        <h2>「埋め込み（ベクトル）」とは？</h2>
+        <p>「意味で探す」ためのカギになる仕組みです。AIは文章を、意味を表す<strong>数値の並び（ベクトル）</strong>に変換します。これを「埋め込み（embedding）」と呼びます。意味が近い文章どうしは、数値の並びも近くなります。だから「料金はいくら？」と「価格について」のように言葉が違っても、数値が近いので同じページにたどり着けます。</p>
+        <div class="callout callout-note">
+            <p>難しく考えなくて大丈夫です。<strong>「埋め込み＝文章を意味で比べられる数値に変えること」</strong>とだけ覚えておけば、設定には十分です。索引を作るときに、この埋め込みが各ページに対して1回作られます。</p>
+        </div>
+
+        <h2>「プロバイダ」とは？</h2>
+        <p>AIの機能を提供している会社・サービスのことです。このプラグインは複数のプロバイダに対応しています。それぞれ「探す（埋め込み）」が使えるか、「答える（チャット）」が使えるかが異なります。詳しい比較は<a href="ai-settings.html">AI・モデル設定</a>にありますが、<strong>迷ったら検索AI・回答AIの両方を OpenAI にしておけば確実</strong>です。</p>
+
+        <h2>用語集（このマニュアル・管理画面でよく出る言葉）</h2>
+        <table>
+            <thead><tr><th style="width:26%;">用語</th><th>意味</th></tr></thead>
+            <tbody>
+                <tr><td>検索AI</td><td>質問に関係するページを探す係。「埋め込み」を使うAI。</td></tr>
+                <tr><td>回答AI</td><td>見つかったページから回答文を作る係。「チャット」を行うAI。</td></tr>
+                <tr><td>索引（インデックス）</td><td>サイトの全ページを検索しやすい形に変換して保存したもの。</td></tr>
+                <tr><td>埋め込み（ベクトル）</td><td>文章を「意味」で比べられる数値の並びに変換したもの。</td></tr>
+                <tr><td>プロバイダ</td><td>AIを提供するサービス（OpenAI / GLM(Z.AI) / Ollama Cloud など）。</td></tr>
+                <tr><td>APIキー</td><td>AIサービスを使うための「合鍵」。各自がアカウントで発行します。</td></tr>
+                <tr><td>モデル</td><td>AIの種類・バージョン名（例: gpt-4o-mini、text-embedding-3-small）。</td></tr>
+                <tr><td>サイトマップ</td><td>サイト内ページの一覧ファイル（通常 /wp-sitemap.xml）。索引の材料になります。</td></tr>
+                <tr><td>llms.txt</td><td>AI向けにサイトの要点を示すテキストファイル（任意）。あれば索引の補助に使えます。</td></tr>
+                <tr><td>サンドボックス</td><td>公開前に想定質問でテストする練習場所。</td></tr>
+                <tr><td>フォールバック</td><td>適切なページが見つからなかったときの「該当なし」案内のこと。</td></tr>
+            </tbody>
+        </table>
+
+        <nav class="page-nav">
+            <a href="index.html" class="prev">&laquo; 概要</a>
+            <a href="setup.html" class="next">インストール・初期設定 &raquo;</a>
+        </nav>
+
+        <footer class="manual-footer">
+            <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+        </footer>
+    </main>
+
+    <div class="lightbox"></div>
+
+    <script src="js/manual.js?v=1"></script>
+</body>
+</html>
