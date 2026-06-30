@@ -161,9 +161,10 @@ class Ks_Concierge_Admin {
 				}
 				break;
 			case 'index':
-				$values['reindex_interval'] = isset( $in['reindex_interval'] ) ? sanitize_key( $in['reindex_interval'] ) : 'daily';
-				$values['exclude_rules']    = isset( $in['exclude_rules'] ) ? sanitize_textarea_field( $in['exclude_rules'] ) : '';
-				$values['priority_rules']   = isset( $in['priority_rules'] ) ? sanitize_textarea_field( $in['priority_rules'] ) : '';
+				$values['reindex_interval']   = isset( $in['reindex_interval'] ) ? sanitize_key( $in['reindex_interval'] ) : 'daily';
+				$values['exclude_rules']      = isset( $in['exclude_rules'] ) ? sanitize_textarea_field( $in['exclude_rules'] ) : '';
+				$values['priority_rules']     = isset( $in['priority_rules'] ) ? sanitize_textarea_field( $in['priority_rules'] ) : '';
+				$values['reachability_check'] = ! empty( $in['reachability_check'] );
 				break;
 			case 'display':
 				$values['tab_label']          = isset( $in['tab_label'] ) ? sanitize_text_field( $in['tab_label'] ) : '';
@@ -183,6 +184,9 @@ class Ks_Concierge_Admin {
 				$values['pii_mode']           = isset( $in['pii_mode'] ) && in_array( $in['pii_mode'], array( 'mask', 'block' ), true ) ? $in['pii_mode'] : 'mask';
 				$values['log_retention_days'] = isset( $in['log_retention_days'] ) ? absint( $in['log_retention_days'] ) : 90;
 				$values['consent_required']   = ! empty( $in['consent_required'] );
+				$values['log_ip']             = ! empty( $in['log_ip'] );
+				$values['trust_cloudflare']   = ! empty( $in['trust_cloudflare'] );
+				$values['trusted_proxies']    = isset( $in['trusted_proxies'] ) ? sanitize_textarea_field( $in['trusted_proxies'] ) : '';
 				$values['cost_limit_daily']   = isset( $in['cost_limit_daily'] ) ? max( 0, (float) $in['cost_limit_daily'] ) : 0;
 				$values['cost_limit_monthly'] = isset( $in['cost_limit_monthly'] ) ? max( 0, (float) $in['cost_limit_monthly'] ) : 0;
 				$values['token_limit_daily']   = isset( $in['token_limit_daily'] ) ? absint( $in['token_limit_daily'] ) : 0;
@@ -220,6 +224,13 @@ class Ks_Concierge_Admin {
 		// without waiting for the next full reindex.
 		if ( $values['exclude_rules'] !== $current['exclude_rules'] ) {
 			( new Ks_Concierge_Cache() )->apply_exclude_rules();
+		}
+
+		// Reachability check turned off: restore pages demoted to 'unreachable' to
+		// 'active' so they re-enter search (the recovery probe no longer runs).
+		$reach_was_on = ! isset( $current['reachability_check'] ) || ! empty( $current['reachability_check'] );
+		if ( isset( $values['reachability_check'] ) && $reach_was_on && empty( $values['reachability_check'] ) ) {
+			( new Ks_Concierge_Cache() )->restore_unreachable();
 		}
 
 		add_settings_error( 'ks_concierge', 'saved', __( '設定を保存しました。', 'kashiwazaki-seo-concierge' ), 'updated' );
@@ -309,6 +320,9 @@ class Ks_Concierge_Admin {
 			<?php endif; ?>
 			<?php if ( isset( $_GET['reindexed'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'インデックスを再構築しました。', 'kashiwazaki-seo-concierge' ); ?></p></div>
+			<?php endif; ?>
+			<?php if ( isset( $_GET['linkcheck'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'リンク到達性チェックを開始しました（バックグラウンドで順次実行します）。', 'kashiwazaki-seo-concierge' ); ?></p></div>
 			<?php endif; ?>
 
 			<h2 class="nav-tab-wrapper">
@@ -492,23 +506,80 @@ class Ks_Concierge_Admin {
 				echo '<tr><td colspan="2"><p class="description">' . esc_html__( 'カスタムプロバイダで単価が0（未設定）の場合は、プライバシー・安全タブのトークン上限が課金の歯止めとして適用されます。', 'kashiwazaki-seo-concierge' ) . '</p></td></tr>';
 				break;
 			case 'index':
-				$this->field_select( 'reindex_interval', __( '索引の自動更新間隔', 'kashiwazaki-seo-concierge' ), $s['reindex_interval'], array(
+				// render_tab() opened a form-table before the switch. Close it (the
+				// "状態" block below is not a form-table) and reopen one for "設定".
+				echo '</table>';
+
+				$cache        = new Ks_Concierge_Cache();
+				$counts       = $cache->status_counts();
+				$broken_total = (int) $counts['unreachable'] + (int) $counts['broken'];
+
+				// ── 状態 ──
+				echo '<h2 class="title" style="font-size:1.1em;margin:1em 0 .3em;">' . esc_html__( 'インデックスの状態', 'kashiwazaki-seo-concierge' ) . '</h2>';
+				$last = (int) get_option( 'ks_concierge_last_reindex', 0 );
+				echo '<p>' . esc_html__( '最終更新:', 'kashiwazaki-seo-concierge' ) . ' ' . ( $last ? esc_html( gmdate( 'Y-m-d H:i', $last ) . ' UTC' ) : '—' ) . '</p>';
+				echo '<p style="font-size:1.05em;">' . sprintf(
+					/* translators: 1: searchable, 2: excluded, 3: link-broken (unreachable+broken), 4: total. */
+					esc_html__( '検索対象 %1$s ・ 除外 %2$s ・ リンク切れ %3$s （全 %4$s）', 'kashiwazaki-seo-concierge' ),
+					'<strong>' . esc_html( number_format_i18n( $counts['active'] ) ) . '</strong>',
+					esc_html( number_format_i18n( $counts['excluded'] ) ),
+					'<strong>' . esc_html( number_format_i18n( $broken_total ) ) . '</strong>',
+					esc_html( number_format_i18n( $counts['total'] ) )
+				) . '</p>';
+				echo '<p class="description">' . esc_html__( '「検索対象」だけが回答に使われます。', 'kashiwazaki-seo-concierge' ) . '</p>';
+
+				// 操作（nonce 付きリンク。入れ子 <form> は不可なので <a> で）
+				$reindex_url   = wp_nonce_url( admin_url( 'admin-post.php?action=ks_concierge_reindex_now' ), 'ks_concierge_reindex_now' );
+				$linkcheck_url = wp_nonce_url( admin_url( 'admin-post.php?action=ks_concierge_check_links_now' ), 'ks_concierge_check_links_now' );
+				// アクションは縦に1行ずつ。各ボタンの直後に「?」を置くことで、どちらの
+				// 説明かが一目で分かる（横並びだと「?」がボタン間で曖昧になる）。
+				echo '<p style="margin:.4em 0;">';
+				echo '<a href="' . esc_url( $reindex_url ) . '" class="button button-secondary">' . esc_html__( '今すぐ再構築', 'kashiwazaki-seo-concierge' ) . '</a>';
+				echo $this->help_icon( __( 'サイトマップ／llms.txt から全ページを読み込み直し、検索データ（索引）を作り直します。設定変更や記事更新をすぐ反映したいときに押します。', 'kashiwazaki-seo-concierge' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				echo '</p>';
+				echo '<p style="margin:.4em 0;">';
+				echo '<a href="' . esc_url( $linkcheck_url ) . '" class="button button-secondary">' . esc_html__( 'リンクを今すぐチェック', 'kashiwazaki-seo-concierge' ) . '</a>';
+				echo $this->help_icon( __( '全ページの到達性を順次確認します。分割実行のため完了まで数分かかる場合があります。', 'kashiwazaki-seo-concierge' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				echo '</p>';
+
+				// リンク切れ一覧（unreachable + broken、最新50件）
+				$unavailable = $cache->get_unavailable_pages( 50 );
+				if ( ! empty( $unavailable ) ) {
+					$caption = ( $broken_total > count( $unavailable ) )
+						/* translators: 1: total link-broken, 2: shown count. */
+						? sprintf( esc_html__( 'リンク切れ %1$s 件（最新 %2$s 件を表示）', 'kashiwazaki-seo-concierge' ), esc_html( number_format_i18n( $broken_total ) ), esc_html( number_format_i18n( count( $unavailable ) ) ) )
+						/* translators: %s: total link-broken. */
+						: sprintf( esc_html__( 'リンク切れ（全 %s 件）', 'kashiwazaki-seo-concierge' ), esc_html( number_format_i18n( $broken_total ) ) );
+					echo '<p class="description" style="margin:.5em 0 .2em;">' . $caption . '</p>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+					echo '<table class="widefat striped" style="max-width:900px;margin:0 0 8px;"><thead><tr>';
+					echo '<th>' . esc_html__( 'ページURL', 'kashiwazaki-seo-concierge' ) . '</th>';
+					echo '<th style="width:140px">' . esc_html__( '種別・状態', 'kashiwazaki-seo-concierge' ) . '</th>';
+					echo '<th style="width:160px">' . esc_html__( '確認日時', 'kashiwazaki-seo-concierge' ) . '</th></tr></thead><tbody>';
+					foreach ( $unavailable as $row ) {
+						if ( 'broken' === (string) $row->status ) {
+							$kind = esc_html__( 'ソースから消失', 'kashiwazaki-seo-concierge' );
+						} else {
+							$kind = ( null !== $row->http_status ) ? esc_html( (string) (int) $row->http_status ) : esc_html__( 'エラー', 'kashiwazaki-seo-concierge' );
+						}
+						echo '<tr><td><a href="' . esc_url( $row->url ) . '" target="_blank" rel="noopener noreferrer" title="' . esc_attr( $row->url ) . '">' . esc_html( $this->short_url( $row->url ) ) . '</a></td>';
+						echo '<td>' . $kind . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						echo '<td>' . esc_html( $row->http_checked_at ? $row->http_checked_at . ' UTC' : '—' ) . '</td></tr>';
+					}
+					echo '</tbody></table>';
+				}
+
+				// ── 設定 ──（form-table 一本化。長い説明はツールチップへ）
+				echo '<h2 class="title" style="font-size:1.1em;margin:1.5em 0 .3em;">' . esc_html__( '設定', 'kashiwazaki-seo-concierge' ) . '</h2>';
+				echo '<table class="form-table" role="presentation">';
+				$this->field_select( 'reindex_interval', __( '自動更新の間隔', 'kashiwazaki-seo-concierge' ), $s['reindex_interval'], array(
 					'hourly'     => __( '毎時', 'kashiwazaki-seo-concierge' ),
 					'twicedaily' => __( '1日2回', 'kashiwazaki-seo-concierge' ),
 					'daily'      => __( '毎日', 'kashiwazaki-seo-concierge' ),
 					'weekly'     => __( '毎週', 'kashiwazaki-seo-concierge' ),
-				), __( 'サイトの内容を検索データに取り込み直す頻度。記事をよく更新するなら毎日などに。通常は毎日でOKです。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_textarea( 'exclude_rules', __( '検索から除外するURL（1行に1つ・部分一致）', 'kashiwazaki-seo-concierge' ), $s['exclude_rules'], __( '検索対象から外したいURLの一部を1行ずつ書きます。例：/tag/ や /category/ と書くと、そのURLを含むページをすべて除外します。保存すると即座に反映されます。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_textarea( 'priority_rules', __( '優先して表示するURL（1行に1つ・部分一致）', 'kashiwazaki-seo-concierge' ), $s['priority_rules'], __( '回答候補で優先的に上位に出したいURLの一部を1行ずつ。重要なページのURLを入れると、回答に出やすくなります。', 'kashiwazaki-seo-concierge' ) );
-				echo '</table>';
-				$last = (int) get_option( 'ks_concierge_last_reindex', 0 );
-				echo '<p>' . esc_html__( '最終再構築:', 'kashiwazaki-seo-concierge' ) . ' ' . ( $last ? esc_html( gmdate( 'Y-m-d H:i', $last ) . ' UTC' ) : '—' ) . '</p>';
-				echo '<p class="description">' . esc_html__( '検索インデックスの鮮度は再構築間隔に依存します。即時反映が必要な場合は下のボタンで手動再構築してください。低トラフィックのサイトではサーバー実cron（DISABLE_WP_CRON）を推奨します。', 'kashiwazaki-seo-concierge' ) . '</p>';
-				// Use a nonce-protected link (not a nested <form>, which is invalid HTML
-				// inside the outer settings form).
-				$reindex_url = wp_nonce_url( admin_url( 'admin-post.php?action=ks_concierge_reindex_now' ), 'ks_concierge_reindex_now' );
-				echo '<a href="' . esc_url( $reindex_url ) . '" class="button button-secondary">' . esc_html__( '今すぐ再構築', 'kashiwazaki-seo-concierge' ) . '</a>';
-				echo '<table class="form-table" role="presentation">';
+				), __( 'サイト内容を取り込み直す頻度。通常は毎日でOK。即時反映は「今すぐ再構築」。低トラフィックのサイトはサーバー実cron（DISABLE_WP_CRON）を推奨。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_textarea( 'exclude_rules', __( '検索から除外するURL', 'kashiwazaki-seo-concierge' ), $s['exclude_rules'], __( '検索から外したいURLの一部を1行ずつ。例：/tag/ や /category/。保存で即反映。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_textarea( 'priority_rules', __( '優先して表示するURL', 'kashiwazaki-seo-concierge' ), $s['priority_rules'], __( '上位に出したいURLの一部を1行ずつ。重要ページを入れると回答に出やすくなります。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_checkbox( 'reachability_check', __( 'リンク到達性チェック', 'kashiwazaki-seo-concierge' ), ! empty( $s['reachability_check'] ), __( '見つからない（404）・エラー（403・500・タイムアウト等）のページを回答候補から自動で外します。直れば自動で戻ります。', 'kashiwazaki-seo-concierge' ) );
 				break;
 			case 'display':
 				$this->field_text( 'tab_label', __( 'チャットを開くボタンの文言', 'kashiwazaki-seo-concierge' ), $s['tab_label'], '', __( 'サイト右下に出る開閉ボタンの文字。空欄なら「なにかお探しですか？」が表示されます。', 'kashiwazaki-seo-concierge' ) );
@@ -544,6 +615,10 @@ class Ks_Concierge_Admin {
 				), __( '電話番号やメール等の個人情報が質問に含まれた場合の扱い。伏字＝マスクして送信、送信せず＝AIに送らず定型応答を返します。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_number( 'log_retention_days', __( 'ログの保存日数', 'kashiwazaki-seo-concierge' ), $s['log_retention_days'], __( '質問ログを何日間保存するか。過ぎたものは自動で削除されます。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_checkbox( 'consent_required', __( '送信前に同意を求める', 'kashiwazaki-seo-concierge' ), $s['consent_required'], __( '質問をAIに送る前に、訪問者の同意を必須にします。プライバシーを重視するサイト向けです。', 'kashiwazaki-seo-concierge' ) );
+				echo '<tr><td colspan="2"><hr><strong>' . esc_html__( '🛡 スパム対策（IP・ブラウザの記録）', 'kashiwazaki-seo-concierge' ) . '</strong></td></tr>';
+				$this->field_checkbox( 'log_ip', __( '訪問者のIPアドレスとブラウザを履歴に記録する', 'kashiwazaki-seo-concierge' ), ! empty( $s['log_ip'] ), __( 'スパム特定用にIPとブラウザを記録します。保存日数で自動削除。IPは個人情報のためプライバシーポリシー記載を推奨。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_checkbox( 'trust_cloudflare', __( 'Cloudflare 経由のサイト', 'kashiwazaki-seo-concierge' ), ! empty( $s['trust_cloudflare'] ), __( 'Cloudflare 経由のサイトでオン。本当の訪問者IPを記録でき、連投制限も本人単位で効きます。使っていなければオフのまま。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_textarea( 'trusted_proxies', __( '信頼するプロキシ（上級者向け・1行に1つ・CIDR可）', 'kashiwazaki-seo-concierge' ), $s['trusted_proxies'], __( 'Cloudflare 以外のプロキシ経由時、その送信元IP/CIDRを記入（例：10.0.0.0/8）。不明なら空欄でOK。', 'kashiwazaki-seo-concierge' ) );
 				echo '</table>';
 				if ( (float) $s['cost_limit_daily'] <= 0 && (float) $s['cost_limit_monthly'] <= 0
 					&& (int) $s['token_limit_daily'] <= 0 && (int) $s['token_limit_monthly'] <= 0
@@ -661,6 +736,12 @@ class Ks_Concierge_Admin {
 								<span class="ks-badge ks-badge--admin"><?php esc_html_e( '管理者テスト', 'kashiwazaki-seo-concierge' ); ?></span>
 							<?php else : ?>
 								<span class="ks-badge ks-badge--visitor"><?php esc_html_e( '訪問者', 'kashiwazaki-seo-concierge' ); ?></span>
+							<?php endif; ?>
+							<?php if ( ! empty( $row->ip ) ) : ?>
+								<div class="ks-ip" style="font-size:11px;color:#555;margin-top:4px;word-break:break-all;"><?php echo esc_html( (string) $row->ip ); ?></div>
+							<?php endif; ?>
+							<?php if ( ! empty( $row->user_agent ) ) : ?>
+								<div class="ks-ua" style="font-size:11px;color:#888;margin-top:2px;" title="<?php echo esc_attr( (string) $row->user_agent ); ?>"><?php echo esc_html( mb_strimwidth( (string) $row->user_agent, 0, 38, '…' ) ); ?></div>
 							<?php endif; ?>
 						</td>
 						<td>

@@ -21,6 +21,17 @@ class Ks_Concierge_Cache {
 	const STATE_KEY         = 'ks_concierge_reindex_state';
 	const MAX_DRAIN_BATCHES = 200;
 
+	// Link-reachability check: how many URLs to probe per pass, the dedicated
+	// drain cron hook / lock for the manual "check links now" sweep, and the
+	// number of consecutive transient failures required before a reachable page
+	// is demoted to 'unreachable' (one transient 5xx/timeout must not evict a
+	// live page).
+	const REACH_BATCH       = 15;
+	const LINKCHECK_HOOK    = 'ks_concierge_check_links';
+	const LINKCHECK_LOCK    = 'ks_concierge_check_links_lock';
+	const LINKCHECK_RUN_KEY = 'ks_concierge_linkcheck_run';
+	const REACH_FAIL_LIMIT  = 2;
+
 	/**
 	 * Whether every configured source returned results in the last collection.
 	 *
@@ -35,7 +46,9 @@ class Ks_Concierge_Cache {
 	 */
 	public function register() {
 		add_action( self::CRON_HOOK, array( $this, 'run_reindex' ) );
+		add_action( self::LINKCHECK_HOOK, array( $this, 'run_link_check' ) );
 		add_action( 'admin_post_ks_concierge_reindex_now', array( $this, 'handle_manual_reindex' ) );
+		add_action( 'admin_post_ks_concierge_check_links_now', array( $this, 'handle_check_links_now' ) );
 		add_filter( 'cron_schedules', array( $this, 'add_schedules' ) );
 	}
 
@@ -68,6 +81,62 @@ class Ks_Concierge_Cache {
 		$this->run_reindex();
 		wp_safe_redirect( add_query_arg( array( 'page' => 'kashiwazaki-seo-concierge', 'tab' => 'index', 'reindexed' => '1' ), admin_url( 'admin.php' ) ) );
 		exit;
+	}
+
+	/**
+	 * Handle the "check links now" admin-post action: queue a full reachability
+	 * sweep. Every active/unreachable page is flagged pending (http_checked_at
+	 * NULL), one batch is probed inline for immediate feedback, and the rest are
+	 * drained by chained cron so the request never blocks on hundreds of HTTP
+	 * round-trips (avoids PHP max_execution_time).
+	 *
+	 * @return void
+	 */
+	public function handle_check_links_now() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to do this.', 'kashiwazaki-seo-concierge' ) );
+		}
+		check_admin_referer( 'ks_concierge_check_links_now' );
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( "UPDATE {$table} SET http_checked_at = NULL WHERE status IN ( 'active', 'unreachable' )" );
+		update_option( self::LINKCHECK_RUN_KEY, time(), false );
+		$this->run_link_check();
+		wp_safe_redirect( add_query_arg( array( 'page' => 'kashiwazaki-seo-concierge', 'tab' => 'index', 'linkcheck' => '1' ), admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * Drain one batch of the queued reachability sweep and chain the next batch
+	 * via cron until no pending (http_checked_at NULL) pages remain. Lock-guarded
+	 * so cron and the inline kick do not collide.
+	 *
+	 * @return void
+	 */
+	public function run_link_check() {
+		if ( ! Ks_Concierge_Settings::get( 'reachability_check', true ) ) {
+			delete_option( self::LINKCHECK_RUN_KEY );
+			return;
+		}
+		if ( get_transient( self::LINKCHECK_LOCK ) ) {
+			return;
+		}
+		set_transient( self::LINKCHECK_LOCK, time(), 10 * MINUTE_IN_SECONDS );
+		try {
+			$this->reachability_pass( self::REACH_BATCH, 'http_checked_at IS NULL' );
+			global $wpdb;
+			$table = $wpdb->prefix . 'ks_concierge_pages';
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$remaining = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE status IN ( 'active', 'unreachable' ) AND http_checked_at IS NULL" );
+			if ( $remaining > 0 ) {
+				wp_schedule_single_event( time(), self::LINKCHECK_HOOK );
+			} else {
+				delete_option( self::LINKCHECK_RUN_KEY );
+			}
+		} finally {
+			delete_transient( self::LINKCHECK_LOCK );
+		}
 	}
 
 	/**
@@ -166,6 +235,15 @@ class Ks_Concierge_Cache {
 
 			if ( 0 === $rows_selected || $state['depth'] >= self::MAX_DRAIN_BATCHES ) {
 				// Backlog drained (or depth cap reached: hand back to regular cron).
+				// Run the periodic link-reachability sweep only here — when the
+				// embedding drain is idle — so a long initial drain (which chains
+				// many back-to-back batches) does not fire a storm of HTTP probes;
+				// in steady state each cron tick probes one small least-recently-
+				// checked batch, catching pages that 404 after indexing.
+				if ( Ks_Concierge_Settings::get( 'reachability_check', true ) ) {
+					$this->reachability_pass( self::REACH_BATCH );
+					Ks_Concierge_Embeddings::flush_matrix_cache();
+				}
 				$state['active'] = false;
 				update_option( self::STATE_KEY, $state, false );
 			} else {
@@ -215,12 +293,15 @@ class Ks_Concierge_Cache {
 			// Sitemap-only URL: upsert position/lastmod, keep existing meta/hash.
 			if ( $existing ) {
 				$changed = ( null !== $lastmod && ! empty( $existing->lastmod ) && $lastmod > $existing->lastmod );
+				// Preserve a reachability demotion (see upsert_page): a page marked
+				// 'unreachable' stays so until a successful probe restores it.
+				$new_status = ( 'unreachable' === (string) $existing->status ) ? 'unreachable' : 'active';
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 				$wpdb->update(
 					$wpdb->prefix . 'ks_concierge_pages',
 					array(
 						'lastmod'    => $lastmod,
-						'status'     => 'active',
+						'status'     => $new_status,
 						'priority'   => $this->priority_for( $url ),
 						'updated_at' => current_time( 'mysql', true ),
 					),
@@ -296,9 +377,17 @@ class Ks_Concierge_Cache {
 		}
 		foreach ( array_chunk( $ids, 200 ) as $chunk ) {
 			$ph = implode( ',', array_fill( 0, count( $chunk ), '%d' ) );
+			// Capture URLs before the status change so cached answers that point at
+			// these now-removed pages can be purged (same cache-integrity guarantee
+			// as set_status_by_url; this bulk path bypasses that helper).
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$urls = $wpdb->get_col( $wpdb->prepare( "SELECT url FROM {$pages} WHERE id IN ({$ph})", $chunk ) );
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			$wpdb->query( $wpdb->prepare( "UPDATE {$pages} SET status = 'broken' WHERE id IN ({$ph})", $chunk ) );
 			Ks_Concierge_Embeddings::delete_for_pages( $chunk );
+			foreach ( (array) $urls as $removed_url ) {
+				$this->purge_answer_cache_for_url( (string) $removed_url );
+			}
 		}
 	}
 
@@ -469,6 +558,12 @@ class Ks_Concierge_Cache {
 		);
 		$existing = $this->get_page_by_url( $url );
 		if ( $existing ) {
+			// Preserve a link-reachability demotion: discovery / re-embed must not
+			// blindly re-activate a page the link check marked 'unreachable'. Only a
+			// successful reachability probe (reachability_pass) restores it to active.
+			if ( 'unreachable' === (string) $existing->status ) {
+				$data['status'] = 'unreachable';
+			}
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 			$wpdb->update( $table, $data, array( 'id' => $existing->id ) );
 			return (int) $existing->id;
@@ -509,10 +604,13 @@ class Ks_Concierge_Cache {
 	 * Set a page status by URL and clean up embeddings when no longer needed.
 	 *
 	 * Embeddings are deleted for permanently-gone statuses (e.g. 'broken'), but
-	 * KEPT for 'excluded' so that an admin exclude rule is reversible without a
-	 * paid re-embed: search already filters to status='active', so an excluded
-	 * page with its vector intact simply drops out of results, and removing the
-	 * rule (status back to 'active') makes it searchable again immediately.
+	 * KEPT for the reversible non-search statuses 'excluded' and 'unreachable':
+	 * search already filters to status='active', so such a page simply drops out
+	 * of results with its vector intact, and restoring it (status back to
+	 * 'active') makes it searchable again immediately with no paid re-embed.
+	 *
+	 * Any move away from 'active' also purges cached answers that reference the
+	 * URL, so a stale cached answer cannot keep surfacing a now-removed page.
 	 *
 	 * @param string $url    URL.
 	 * @param string $status New status.
@@ -525,11 +623,147 @@ class Ks_Concierge_Cache {
 		if ( ! $page ) {
 			return;
 		}
+		$prev = (string) $page->status;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		$wpdb->update( $table, array( 'status' => $status ), array( 'id' => $page->id ) );
-		if ( 'active' !== $status && 'excluded' !== $status ) {
+		if ( ! in_array( $status, array( 'active', 'excluded', 'unreachable' ), true ) ) {
 			Ks_Concierge_Embeddings::delete_for_pages( array( (int) $page->id ) );
 		}
+		// Purge cached answers referencing this URL when it leaves the active set
+		// (only on an actual transition, to avoid redundant work).
+		if ( 'active' !== $status && $prev !== $status ) {
+			$this->purge_answer_cache_for_url( $url );
+		}
+	}
+
+	/**
+	 * Delete cached answers (wp_ks_concierge_cache) whose stored answer JSON
+	 * references the given URL. Matches the JSON-escaped form of the URL (forward
+	 * slashes are stored as "\/") so the LIKE hits the real bytes in the column.
+	 *
+	 * @param string $url URL.
+	 * @return void
+	 */
+	protected function purge_answer_cache_for_url( $url ) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_cache';
+		// Match the URL exactly as it appears inside answer_json: wp_json_encode
+		// yields the quoted, slash-escaped JSON string value ("https:\/\/..."),
+		// which is the precise byte sequence stored. Keeping the surrounding
+		// quotes makes the LIKE an exact value match, so a URL that is a prefix of
+		// a longer URL does not over-match and purge unrelated cache rows.
+		$needle = (string) wp_json_encode( (string) $url );
+		if ( '' === $needle || '""' === $needle ) {
+			return;
+		}
+		$like = '%' . $wpdb->esc_like( $needle ) . '%';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE answer_json LIKE %s", $like ) );
+	}
+
+	/**
+	 * Probe a URL's reachability. HEAD first (cheap), falling back to a ranged GET
+	 * when HEAD is unsupported (405/501) or yields no code. Redirects are followed
+	 * so the final landing status is judged.
+	 *
+	 * @param string $url URL.
+	 * @return int HTTP status code, or 0 on a network error / timeout.
+	 */
+	protected function check_url_reachable( $url ) {
+		$args = array(
+			'timeout'     => 5,
+			'redirection' => 5,
+			'sslverify'   => true,
+			'user-agent'  => 'KashiwazakiSEOConcierge/' . ( defined( 'KS_CONCIERGE_VERSION' ) ? KS_CONCIERGE_VERSION : '1.0' ) . '; ' . home_url( '/' ),
+		);
+
+		$resp = wp_remote_head( $url, $args );
+		$code = is_wp_error( $resp ) ? 0 : (int) wp_remote_retrieve_response_code( $resp );
+
+		// HEAD unsupported or inconclusive: retry once with a tiny ranged GET.
+		if ( 0 === $code || 405 === $code || 501 === $code ) {
+			$args['headers'] = array( 'Range' => 'bytes=0-0' );
+			$resp            = wp_remote_get( $url, $args );
+			$code            = is_wp_error( $resp ) ? 0 : (int) wp_remote_retrieve_response_code( $resp );
+		}
+
+		return $code;
+	}
+
+	/**
+	 * Probe a batch of the least-recently-checked active/unreachable pages and
+	 * apply the reachability policy:
+	 *
+	 * - 2xx/3xx (final landing) -> reachable: reset the failure counter and
+	 *   restore 'active' (no re-embed needed, the vector was kept).
+	 * - 404/410 -> gone for good: mark 'unreachable' immediately.
+	 * - 5xx / 429 / 403 / timeout / connection error -> transient: increment the
+	 *   consecutive-failure counter; only demote to 'unreachable' once it reaches
+	 *   REACH_FAIL_LIMIT, so a single blip does not evict a live page.
+	 *
+	 * @param int   $limit     Max pages to probe.
+	 * @param array $where_sql Optional extra WHERE fragment (already-safe SQL).
+	 * @return int Number of pages probed.
+	 */
+	protected function reachability_pass( $limit, $where_sql = '' ) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		$extra = '' !== $where_sql ? ' AND ' . $where_sql : '';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT id, url, status, consecutive_failures FROM {$table}
+				 WHERE status IN ( 'active', 'unreachable' ){$extra}
+				 ORDER BY ( http_checked_at IS NOT NULL ), http_checked_at ASC, id ASC
+				 LIMIT %d",
+				(int) $limit
+			)
+		);
+		if ( empty( $rows ) ) {
+			return 0;
+		}
+
+		$now     = current_time( 'mysql', true );
+		$changed = false;
+		foreach ( $rows as $row ) {
+			$code      = $this->check_url_reachable( (string) $row->url );
+			$reachable = ( $code >= 200 && $code < 400 );
+			$gone      = ( 404 === $code || 410 === $code );
+			$fails     = (int) $row->consecutive_failures;
+
+			if ( $reachable ) {
+				$new_status = 'active';
+				$fails      = 0;
+			} elseif ( $gone ) {
+				$new_status = 'unreachable';
+				$fails++;
+			} else {
+				// Transient failure: count it, demote only at the threshold.
+				$fails++;
+				$new_status = ( $fails >= self::REACH_FAIL_LIMIT ) ? 'unreachable' : (string) $row->status;
+			}
+
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->update(
+				$table,
+				array(
+					'http_status'          => ( $code > 0 ) ? $code : null,
+					'http_checked_at'      => $now,
+					'consecutive_failures' => $fails,
+				),
+				array( 'id' => (int) $row->id )
+			);
+
+			if ( $new_status !== (string) $row->status ) {
+				$this->set_status_by_url( (string) $row->url, $new_status );
+				$changed = true;
+			}
+		}
+
+		if ( $changed ) {
+			Ks_Concierge_Embeddings::flush_matrix_cache();
+		}
+		return count( $rows );
 	}
 
 	/**
@@ -586,5 +820,65 @@ class Ks_Concierge_Cache {
 		// message is shown alone (no misleading suggestions).
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE status = 'active' AND priority > 0 ORDER BY priority DESC, updated_at DESC LIMIT %d", (int) $limit ) );
+	}
+
+	/**
+	 * Restore every page demoted to 'unreachable' back to 'active'. Called when the
+	 * reachability check is turned off: without the periodic probe nothing would
+	 * ever recover those pages, so they must re-enter search immediately. Vectors
+	 * were kept, so this needs no re-embed.
+	 *
+	 * @return int Rows restored.
+	 */
+	public function restore_unreachable() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$restored = (int) $wpdb->query( "UPDATE {$table} SET status = 'active', consecutive_failures = 0 WHERE status = 'unreachable'" );
+		if ( $restored > 0 ) {
+			Ks_Concierge_Embeddings::flush_matrix_cache();
+		}
+		return $restored;
+	}
+
+	/**
+	 * Count indexed pages by status for the admin index breakdown.
+	 *
+	 * @return array{active:int,excluded:int,unreachable:int,broken:int,total:int}
+	 */
+	public function status_counts() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		$out   = array( 'active' => 0, 'excluded' => 0, 'unreachable' => 0, 'broken' => 0, 'total' => 0 );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results( "SELECT status, COUNT(*) AS c FROM {$table} GROUP BY status", ARRAY_A );
+		foreach ( (array) $rows as $row ) {
+			$count           = (int) $row['c'];
+			$out['total']   += $count;
+			$status          = (string) $row['status'];
+			if ( isset( $out[ $status ] ) ) {
+				$out[ $status ] = $count;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * List pages that are not in search because the link is unavailable: both
+	 * 'unreachable' (404/error reachability failures, with an HTTP status) and
+	 * 'broken' (removed from the source sitemap/llms.txt, http_status NULL). The
+	 * row's status is returned so the admin table can distinguish the two.
+	 *
+	 * @param int $limit Max rows (newest-checked first).
+	 * @return object[]
+	 */
+	public function get_unavailable_pages( $limit = 50 ) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// Order by recency: broken pages have no http_checked_at, so fall back to
+		// updated_at (when they were marked broken) instead of sinking them all to
+		// the bottom past the row limit.
+		return $wpdb->get_results( $wpdb->prepare( "SELECT url, http_status, http_checked_at, status FROM {$table} WHERE status IN ( 'unreachable', 'broken' ) ORDER BY COALESCE( http_checked_at, updated_at ) DESC, id DESC LIMIT %d", (int) $limit ) );
 	}
 }

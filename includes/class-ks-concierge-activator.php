@@ -159,11 +159,15 @@ class Ks_Concierge_Activator {
   status varchar(16) NOT NULL DEFAULT 'active',
   priority int(11) NOT NULL DEFAULT 0,
   lang varchar(10) NULL,
+  http_status smallint(5) unsigned NULL,
+  http_checked_at datetime NULL,
+  consecutive_failures int(10) unsigned NOT NULL DEFAULT 0,
   updated_at datetime NULL,
   PRIMARY KEY  (id),
   UNIQUE KEY url_hash (url_hash),
   KEY status (status),
   KEY lang (lang),
+  KEY http_checked_at (http_checked_at),
   KEY updated_at (updated_at)
 ) {$charset_collate};";
 
@@ -194,6 +198,8 @@ class Ks_Concierge_Activator {
   answered tinyint(1) NOT NULL DEFAULT 0,
   is_admin tinyint(1) NOT NULL DEFAULT 0,
   session_hash char(64) NULL,
+  ip varchar(45) NULL,
+  user_agent varchar(512) NULL,
   PRIMARY KEY  (id),
   KEY created_at (created_at),
   KEY is_admin (is_admin)

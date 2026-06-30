@@ -11,7 +11,7 @@
     <nav class="sidebar">
         <div class="sidebar-header">
             <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
-            <span class="version">v1.0.0</span>
+            <span class="version">v1.0.1</span>
             <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
         </div>
         <ul>
@@ -86,6 +86,13 @@
             <p>除外ルールは<strong>ハードコードではなく、いつでも変更・解除できます</strong>。ルールを消して再構築すれば、また案内対象に戻ります。除外しても、すでに作った検索用データは保持されるため、解除しても再びすぐ検索対象になります。</p>
         </div>
 
+        <h2>リンク到達性チェック（壊れたリンクを案内しない）</h2>
+        <p>索引したページが実際に開けるかを定期的に確認し、<strong>見つからない（404）・エラー（403・500・タイムアウト等）のページを回答候補から自動で外します</strong>。ページが復旧すれば、自動で案内対象に戻ります。一時的なサーバーの不調で正常なページを誤って外さないよう、<strong>404・410 は即時、その他のエラーは2回続けて失敗したとき</strong>に外す設計です。</p>
+        <p>「インデックス」タブ上部の<strong>状態</strong>に、<code>検索対象</code>・<code>除外</code>・<code>リンク切れ</code>の件数と、リンク切れページの一覧（URL・種別／状態・確認日時）が表示されます。<strong>「リンクを今すぐチェック」</strong>ボタンを押すと、その場で全ページの到達性を確認できます（件数が多い場合は分割して進むため、完了まで数分かかることがあります）。</p>
+        <div class="callout callout-note">
+            <p>この機能は「設定」の<strong>リンク到達性チェック</strong>でオン／オフできます（通常はオンのままで構いません）。Cloudflare 等のWAFがボットにだけ 403 を返す環境もあるため、403 などは即時ではなく2回連続失敗で除外します。</p>
+        </div>
+
         <h2>うまく索引できないときは</h2>
         <ul>
             <li>サイトマップURLが正しいか（ブラウザで開けるか）を確認</li>
@@ -102,7 +109,7 @@
 
         <footer class="manual-footer">
             <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
-            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.1</p>
         </footer>
     </main>
 

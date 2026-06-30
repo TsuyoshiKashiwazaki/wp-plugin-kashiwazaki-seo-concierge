@@ -19,7 +19,57 @@
 	var panel = null;
 	var messages = null;
 	var input = null;
+	var sendBtn = null;
+	// In-flight guard: a question is awaiting its answer. While set, the input and
+	// send button are disabled so a second question cannot be sent before the first
+	// reply returns (which would otherwise interleave the bubbles out of order).
+	var sending = false;
 	var consentGiven = ! cfg.consent;
+
+	function setSending( on ) {
+		sending = on;
+		if ( input ) {
+			input.disabled = on;
+		}
+		if ( sendBtn ) {
+			sendBtn.disabled = on;
+		}
+	}
+
+	// Conversation persistence (sessionStorage): the chat survives reloads and
+	// same-tab navigation, and is cleared when the tab closes. Only structured
+	// data is stored (never HTML) and it is re-rendered through the existing
+	// text-node builders, so restoring cannot inject markup.
+	var STORE_KEY = 'ks_concierge_chat';
+	var STORE_MAX = 50;
+	var history = [];
+
+	function saveHistory() {
+		try {
+			window.sessionStorage.setItem( STORE_KEY, JSON.stringify( history ) );
+		} catch ( e ) {}
+	}
+
+	function loadHistory() {
+		try {
+			var raw = window.sessionStorage.getItem( STORE_KEY );
+			if ( ! raw ) {
+				return null;
+			}
+			var arr = JSON.parse( raw );
+			return Array.isArray( arr ) ? arr : null;
+		} catch ( e ) {
+			return null;
+		}
+	}
+
+	function pushHistory( entry ) {
+		history.push( entry );
+		if ( history.length > STORE_MAX ) {
+			history = history.slice( -STORE_MAX );
+		}
+		saveHistory();
+	}
 
 	root.removeAttribute( 'hidden' );
 	if ( cfg.accent ) {
@@ -93,7 +143,22 @@
 		messages.setAttribute( 'aria-live', 'polite' );
 		panel.appendChild( messages );
 
-		if ( cfg.initial ) {
+		var restored = loadHistory();
+		if ( restored && restored.length ) {
+			// Replay a prior conversation (this tab) without re-recording it, and
+			// without re-adding the initial greeting (it is already in history).
+			history = restored.slice( -STORE_MAX );
+			restored.forEach( function ( e ) {
+				if ( ! e ) {
+					return;
+				}
+				if ( 'user' === e.role ) {
+					addUser( e.text, false );
+				} else {
+					addBot( e.text, e.candidates || [], false );
+				}
+			} );
+		} else if ( cfg.initial ) {
 			addBot( cfg.initial, [] );
 		}
 
@@ -116,10 +181,10 @@
 		input.type = 'text';
 		input.placeholder = cfg.i18n.placeholder;
 		input.setAttribute( 'aria-label', cfg.i18n.placeholder );
-		var send = el( 'button', 'ks-concierge__send', cfg.i18n.send );
-		send.type = 'submit';
+		sendBtn = el( 'button', 'ks-concierge__send', cfg.i18n.send );
+		sendBtn.type = 'submit';
 		form.appendChild( input );
-		form.appendChild( send );
+		form.appendChild( sendBtn );
 		form.addEventListener( 'submit', function ( e ) {
 			e.preventDefault();
 			submit();
@@ -149,13 +214,16 @@
 		}
 	}
 
-	function addUser( text ) {
+	function addUser( text, record ) {
 		var m = el( 'div', 'ks-concierge__msg ks-concierge__msg--user', text );
 		messages.appendChild( m );
 		messages.scrollTop = messages.scrollHeight;
+		if ( false !== record ) {
+			pushHistory( { role: 'user', text: String( text == null ? '' : text ) } );
+		}
 	}
 
-	function addBot( text, candidates ) {
+	function addBot( text, candidates, record ) {
 		var row = el( 'div', 'ks-concierge__row ks-concierge__row--bot' );
 		if ( cfg.avatar ) {
 			var av = document.createElement( 'img' );
@@ -201,6 +269,19 @@
 		row.appendChild( m );
 		messages.appendChild( row );
 		messages.scrollTop = messages.scrollHeight;
+		if ( false !== record ) {
+			var stored = [];
+			( candidates || [] ).forEach( function ( c ) {
+				stored.push( {
+					url: c.url,
+					title: c.title,
+					reason: c.reason,
+					score: c.score,
+					lastmod: c.lastmod
+				} );
+			} );
+			pushHistory( { role: 'bot', text: String( text == null ? '' : text ), candidates: stored } );
+		}
 	}
 
 	function addTyping() {
@@ -212,6 +293,9 @@
 	}
 
 	function submit() {
+		if ( sending ) {
+			return;
+		}
 		var q = ( input.value || '' ).trim();
 		if ( ! q ) {
 			return;
@@ -226,6 +310,7 @@
 		addUser( q );
 		input.value = '';
 		ga( 'ask' );
+		setSending( true );
 		var typing = addTyping();
 
 		var body = { question: q };
@@ -245,11 +330,12 @@
 				return { ok: res.ok, data: data };
 			} );
 		} ).then( function ( result ) {
+			setSending( false );
 			if ( typing && typing.parentNode ) {
 				typing.parentNode.removeChild( typing );
 			}
 			if ( ! result.ok || ! result.data ) {
-				addBot( ( result.data && result.data.error ) || cfg.i18n.error, [] );
+				addBot( ( result.data && result.data.error ) || cfg.i18n.error, [], false );
 				return;
 			}
 			addBot( result.data.answer || '', result.data.candidates || [] );
@@ -257,10 +343,11 @@
 				ga( 'fallback' );
 			}
 		} ).catch( function () {
+			setSending( false );
 			if ( typing && typing.parentNode ) {
 				typing.parentNode.removeChild( typing );
 			}
-			addBot( cfg.i18n.error, [] );
+			addBot( cfg.i18n.error, [], false );
 		} );
 	}
 

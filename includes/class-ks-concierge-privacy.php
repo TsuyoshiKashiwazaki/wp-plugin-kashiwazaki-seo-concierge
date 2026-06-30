@@ -39,6 +39,11 @@ class Ks_Concierge_Privacy {
 		$content = wp_kses_post(
 			__( 'Kashiwazaki SEO Concierge sends visitor questions to OpenAI to generate guidance toward relevant pages on this site. Questions and selected pages may be stored temporarily for analytics and are subject to best-effort personal-data masking before storage. Data is retained for the configured retention period and then deleted.', 'kashiwazaki-seo-concierge' )
 		);
+		if ( (bool) Ks_Concierge_Settings::get( 'log_ip', true ) ) {
+			$content .= ' ' . wp_kses_post(
+				__( 'When spam-prevention logging is enabled, the visitor IP address and browser user-agent are also stored with each question for abuse identification, and are deleted together with the log after the same retention period.', 'kashiwazaki-seo-concierge' )
+			);
+		}
 		wp_add_privacy_policy_content( 'Kashiwazaki SEO Concierge', '<p>' . $content . '</p>' );
 	}
 
@@ -95,10 +100,20 @@ class Ks_Concierge_Privacy {
 	 * @return array
 	 */
 	public function erase_data( $email, $page = 1 ) {
+		// Conversation logs (including any IP address and browser user-agent recorded
+		// for spam prevention) are pseudonymous: each row is keyed only by an
+		// irreversible session hash of IP + UA, with no email address or user ID
+		// stored. They therefore cannot be matched to a specific person by email, so
+		// the email-based eraser cannot target an individual's rows. Such data is
+		// instead removed automatically when the row passes the retention window
+		// (see prune_logs), and IP logging can be disabled entirely in the settings.
+		// The message below surfaces this in the WordPress data-erasure report.
 		return array(
 			'items_removed'  => false,
 			'items_retained' => false,
-			'messages'       => array(),
+			'messages'       => array(
+				__( 'Kashiwazaki SEO Concierge conversation logs are not linked to an email address (they are stored under an irreversible session hash). Any IP address and browser user-agent recorded for spam prevention are deleted automatically after the configured retention period, and IP logging can be turned off in the plugin settings.', 'kashiwazaki-seo-concierge' ),
+			),
 			'done'           => true,
 		);
 	}

@@ -11,7 +11,7 @@
     <nav class="sidebar">
         <div class="sidebar-header">
             <h2 style="color:#fff;">Kashiwazaki SEO Concierge</h2>
-            <span class="version">v1.0.0</span>
+            <span class="version">v1.0.1</span>
             <img src="images/main-visual.png" alt="" style="width:100%;border-radius:4px;margin-top:8px;">
         </div>
         <ul>
@@ -68,6 +68,17 @@
             </tbody>
         </table>
 
+        <h2>スパム対策：IP・ブラウザの記録</h2>
+        <p>いたずらやスパムの特定用に、質問の履歴へ<strong>訪問者のIPアドレスとブラウザ（ユーザーエージェント）を記録</strong>できます（既定でオン）。記録した内容は「ログの保存日数」を過ぎると自動的に削除され、「分析」タブの履歴に表示されます。<strong>IPアドレスは個人情報にあたる</strong>ため、プライバシーポリシーへの記載をご検討ください。記録が不要なら、この設定をオフにしてください。</p>
+        <table>
+            <thead><tr><th style="width:34%;">項目</th><th>説明</th></tr></thead>
+            <tbody>
+                <tr><td>IP・ブラウザを記録する</td><td>オンにすると、質問ログに訪問者のIPアドレスとブラウザを保存します（既定オン）。</td></tr>
+                <tr><td>Cloudflare 経由のサイト</td><td>サイトをCloudflareに通している場合にオン。Cloudflare 経由のときだけ本当の訪問者IPを採用するため、IPの記録も連投制限も訪問者単位で正しく機能します。使っていなければオフのままにします。</td></tr>
+                <tr><td>信頼するプロキシ（上級者向け）</td><td>Cloudflare 以外のリバースプロキシ／ロードバランサ経由の場合に、その送信元IP/CIDR（例：<code>10.0.0.0/8</code>）を記入します。分からなければ空欄で構いません。</td></tr>
+            </tbody>
+        </table>
+
         <h2>このプラグインが保存・保護するデータ</h2>
         <table>
             <thead><tr><th>データ</th><th>どこに／どう扱うか</th></tr></thead>
@@ -75,7 +86,7 @@
                 <tr><td>APIキー</td><td>暗号化して保存。<strong>フロント（訪問者側）には絶対に出力しません。</strong>他社のAIへ別社のキーが送られることもありません。</td></tr>
                 <tr><td>ページの索引・埋め込み</td><td>サイト内に保存（検索用の数値データ）。サイトの公開コンテンツから作られます。</td></tr>
                 <tr><td>質問・回答の履歴</td><td>分析用にサイト内へ保存。保存日数を過ぎると自動削除。個人情報はベストエフォートでマスク処理されます。</td></tr>
-                <tr><td>訪問者の個人情報</td><td>原則として保存しません。ログは匿名（セッションのハッシュ）で扱い、メールアドレス等とは結びつけません。</td></tr>
+                <tr><td>訪問者の個人情報</td><td>ログは匿名（セッションのハッシュ）で扱い、メールアドレス等とは結びつけません。ただし<strong>スパム対策を有効にしている場合は、IPアドレスとブラウザを記録します</strong>（保存日数の経過で自動削除）。不要な場合はオフにできます。</td></tr>
             </tbody>
         </table>
         <div class="callout callout-note">
@@ -92,7 +103,7 @@
 
         <footer class="manual-footer">
             <p>作者: <a href="https://www.tsuyoshikashiwazaki.jp/profile/" target="_blank" rel="noopener">柏崎剛（Tsuyoshi Kashiwazaki）</a></p>
-            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.0</p>
+            <p>プラグイン: Kashiwazaki SEO Concierge v1.0.1</p>
         </footer>
     </main>
 

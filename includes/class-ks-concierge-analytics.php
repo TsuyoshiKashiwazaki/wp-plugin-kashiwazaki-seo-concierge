@@ -40,6 +40,11 @@ class Ks_Concierge_Analytics {
 		// playing with the bot, not a real visitor — flag those rows so analytics
 		// can keep them in a separate bucket.
 		$is_admin = ( is_user_logged_in() && current_user_can( 'manage_options' ) ) ? 1 : 0;
+		// Record the real client IP + browser for spam identification, gated by the
+		// log_ip setting. IP detection accounts for Cloudflare / trusted proxies.
+		$log_ip = (bool) Ks_Concierge_Settings::get( 'log_ip', true );
+		$ip     = $log_ip ? Ks_Concierge_Security::client_ip() : null;
+		$ua     = $log_ip ? Ks_Concierge_Security::client_ua() : null;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		$wpdb->insert(
 			$table,
@@ -53,6 +58,8 @@ class Ks_Concierge_Analytics {
 				'answered'     => ! empty( $row['answered'] ) ? 1 : 0,
 				'is_admin'     => $is_admin,
 				'session_hash' => isset( $row['session_hash'] ) ? $row['session_hash'] : '',
+				'ip'           => ( null !== $ip && '' !== $ip ) ? $ip : null,
+				'user_agent'   => ( null !== $ua && '' !== $ua ) ? $ua : null,
 			)
 		);
 	}
@@ -87,7 +94,7 @@ class Ks_Concierge_Analytics {
 		$table = $wpdb->prefix . 'ks_concierge_logs';
 		$cond  = self::scope_sql( $scope );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		return $wpdb->get_results( $wpdb->prepare( "SELECT created_at, question, answer, matched_urls, clicked_url, top_score, answered, is_admin, lang FROM {$table} WHERE 1=1{$cond} ORDER BY id DESC LIMIT %d OFFSET %d", (int) $limit, max( 0, (int) $offset ) ) );
+		return $wpdb->get_results( $wpdb->prepare( "SELECT created_at, question, answer, matched_urls, clicked_url, top_score, answered, is_admin, lang, ip, user_agent FROM {$table} WHERE 1=1{$cond} ORDER BY id DESC LIMIT %d OFFSET %d", (int) $limit, max( 0, (int) $offset ) ) );
 	}
 
 	/**
