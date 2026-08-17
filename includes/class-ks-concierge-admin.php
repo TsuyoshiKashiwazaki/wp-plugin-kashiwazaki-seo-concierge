@@ -97,7 +97,12 @@ class Ks_Concierge_Admin {
 					'chat'  => array(
 						'openai' => array( 'base' => Ks_Concierge_Settings::provider_default_base( 'openai', 'chat' ), 'model' => 'gpt-4o-mini' ),
 						'zai'    => array( 'base' => Ks_Concierge_Settings::provider_default_base( 'zai', 'chat' ), 'model' => 'glm-4.6' ),
-						'ollama' => array( 'base' => Ks_Concierge_Settings::provider_default_base( 'ollama', 'chat' ), 'model' => 'qwen3-coder:480b' ),
+						// No suggested model: Ollama Cloud retires and replaces its
+						// catalogue often (qwen3-coder:480b, suggested here until
+						// now, was retired on 2026-07-15 and answers HTTP 410), so
+						// any name hard-coded here becomes a trap. Left blank for
+						// the admin to fill from the current list on ollama.com.
+						'ollama' => array( 'base' => Ks_Concierge_Settings::provider_default_base( 'ollama', 'chat' ), 'model' => '' ),
 						'custom' => array( 'base' => '', 'model' => '' ),
 					),
 				),
@@ -138,32 +143,142 @@ class Ks_Concierge_Admin {
 				$chat_providers             = array( 'openai', 'zai', 'ollama', 'custom' );
 				// Embeddings only accepts providers that serve an embeddings endpoint.
 				$embed_providers            = array( 'openai', 'custom' );
-				$values['embed_provider']   = isset( $in['embed_provider'] ) && in_array( $in['embed_provider'], $embed_providers, true ) ? $in['embed_provider'] : 'openai';
-				$values['chat_provider']    = isset( $in['chat_provider'] ) && in_array( $in['chat_provider'], $chat_providers, true ) ? $in['chat_provider'] : 'openai';
-				$values['embed_api_base']   = isset( $in['embed_api_base'] ) ? esc_url_raw( trim( (string) $in['embed_api_base'] ) ) : '';
-				$values['chat_api_base']    = isset( $in['chat_api_base'] ) ? esc_url_raw( trim( (string) $in['chat_api_base'] ) ) : '';
 				$values['chat_structured_mode'] = isset( $in['chat_structured_mode'] ) && in_array( $in['chat_structured_mode'], array( 'auto', 'json_schema', 'json_object', 'none' ), true ) ? $in['chat_structured_mode'] : 'auto';
-				$values['chat_model']       = isset( $in['chat_model'] ) ? sanitize_text_field( $in['chat_model'] ) : 'gpt-4o-mini';
-				$values['embeddings_model'] = isset( $in['embeddings_model'] ) ? sanitize_text_field( $in['embeddings_model'] ) : 'text-embedding-3-small';
-				$values['embeddings_dims']  = isset( $in['embeddings_dims'] ) ? absint( $in['embeddings_dims'] ) : 1536;
+
+				// Provider, endpoint and model form one set per role and are saved
+				// together or not at all. Saving them independently produced
+				// impossible combinations — switching the provider while leaving the
+				// model box empty stored the new provider next to the old provider's
+				// model — and the screen still said "saved".
+				// Roles whose provider/base/model could not be applied. Their API key
+				// must not be saved either: the key belongs to the service the admin
+				// was switching to, and storing it under the still-current provider
+				// would file it against the wrong service.
+				$ai_rolled_back = array();
+				$ai_roles = array(
+					'embed' => array(
+						'label'      => __( '検索AI', 'kashiwazaki-seo-concierge' ),
+						'providers'  => $embed_providers,
+						'model_key'  => 'embeddings_model',
+					),
+					'chat'  => array(
+						'label'      => __( '回答AI', 'kashiwazaki-seo-concierge' ),
+						'providers'  => $chat_providers,
+						'model_key'  => 'chat_model',
+					),
+				);
+				foreach ( $ai_roles as $ai_role => $ai_def ) {
+					$provider_key = $ai_role . '_provider';
+					$base_key     = $ai_role . '_api_base';
+					$model_key    = $ai_def['model_key'];
+
+					$provider = isset( $in[ $provider_key ] ) && in_array( $in[ $provider_key ], $ai_def['providers'], true ) ? $in[ $provider_key ] : 'openai';
+					$base     = isset( $in[ $base_key ] ) ? esc_url_raw( trim( (string) $in[ $base_key ] ) ) : '';
+					$model    = isset( $in[ $model_key ] ) ? sanitize_text_field( $in[ $model_key ] ) : '';
+
+					if ( '' === trim( $model ) ) {
+						add_settings_error(
+							'ks_concierge',
+							'ks_concierge_model_required_' . $model_key,
+							sprintf(
+								/* translators: %s: role label (search AI / answer AI). */
+								__( '%s のモデル名が空欄です。使うサービスのモデル名を入力してください。この項目（サービス・接続先・モデル名）は変更前の内容のままにしました。', 'kashiwazaki-seo-concierge' ),
+								$ai_def['label']
+							),
+							'error'
+						);
+						$ai_rolled_back[ $ai_role ] = true;
+						continue; // Leave provider, base and model exactly as stored.
+					}
+					$values[ $provider_key ] = $provider;
+					$values[ $base_key ]     = $base;
+					$values[ $model_key ]    = $model;
+				}
+				// Assigned after the loop above, so the rollback wins: the vector
+				// size belongs to the same set as the embed provider and model. A
+				// new dimension count beside the previous model changes the index
+				// signature and strands every stored vector.
+				if ( empty( $ai_rolled_back['embed'] ) ) {
+					$values['embeddings_dims'] = isset( $in['embeddings_dims'] ) ? absint( $in['embeddings_dims'] ) : 1536;
+				}
 				$values['candidate_count']  = isset( $in['candidate_count'] ) ? min( 20, max( 1, absint( $in['candidate_count'] ) ) ) : 10;
 				$values['system_prompt']    = isset( $in['system_prompt'] ) ? sanitize_textarea_field( $in['system_prompt'] ) : '';
 				$values['custom_embed_price_in']  = isset( $in['custom_embed_price_in'] ) ? max( 0, (float) $in['custom_embed_price_in'] ) : 0;
 				$values['custom_chat_price_in']   = isset( $in['custom_chat_price_in'] ) ? max( 0, (float) $in['custom_chat_price_in'] ) : 0;
 				$values['custom_chat_price_out']  = isset( $in['custom_chat_price_out'] ) ? max( 0, (float) $in['custom_chat_price_out'] ) : 0;
-				// Per-role keys; updated only when a new value is entered so an
-				// existing cipher is preserved on save.
-				if ( isset( $in['embed_api_key'] ) && '' !== trim( (string) $in['embed_api_key'] ) ) {
-					$values['embed_api_key_cipher'] = Ks_Concierge_Settings::encrypt( sanitize_text_field( $in['embed_api_key'] ) );
-				}
-				if ( isset( $in['chat_api_key'] ) && '' !== trim( (string) $in['chat_api_key'] ) ) {
-					$values['chat_api_key_cipher'] = Ks_Concierge_Settings::encrypt( sanitize_text_field( $in['chat_api_key'] ) );
+				// Per-role, per-provider keys; updated only when a new value is
+				// entered so existing ciphers are preserved on save. Storing them
+				// under the provider selected in this same submission keeps each
+				// service's key on file, so switching the dropdown back and forth
+				// no longer sends one service's key to another.
+				foreach ( array( 'embed', 'chat' ) as $role ) {
+					$map_key = $role . '_api_key_ciphers';
+					if ( ! isset( $values[ $map_key ] ) || ! is_array( $values[ $map_key ] ) ) {
+						$values[ $map_key ] = array();
+					}
+					// The legacy single-slot cipher was folded into the map on load;
+					// clearing it here (before any rollback skip) keeps a stale copy
+					// from lingering for a role whose save was rolled back.
+					$values[ $role . '_api_key_cipher' ] = '';
+					if ( ! empty( $ai_rolled_back[ $role ] ) ) {
+						if ( isset( $in[ $role . '_api_key' ] ) && '' !== trim( (string) $in[ $role . '_api_key' ] ) ) {
+							add_settings_error(
+								'ks_concierge',
+								'ks_concierge_key_not_saved_' . $role,
+								sprintf(
+									/* translators: %s: role label (search AI / answer AI). */
+									__( '%s のAPIキーも保存していません。サービスの設定が確定していないため、どのサービスのキーとして保存すべきか決められないためです。モデル名を入力してから、キーをもう一度貼り付けて保存してください。', 'kashiwazaki-seo-concierge' ),
+									( 'embed' === $role ) ? __( '検索AI', 'kashiwazaki-seo-concierge' ) : __( '回答AI', 'kashiwazaki-seo-concierge' )
+								),
+								'error'
+							);
+						}
+						continue;
+					}
+					$field = $role . '_api_key';
+					if ( isset( $in[ $field ] ) && '' !== trim( (string) $in[ $field ] ) ) {
+						$cipher = Ks_Concierge_Settings::encrypt( sanitize_text_field( $in[ $field ] ) );
+						if ( '' === $cipher ) {
+							// Encryption unavailable (no libsodium) or it failed.
+							// Storing the empty result would silently discard the
+							// entered key and wipe the one already on file, while
+							// the screen reported a successful save. The rest of
+							// this role's settings are rolled back too: keeping a
+							// new provider next to no key for it is the mismatch
+							// this whole block exists to prevent.
+							$rollback_keys = array( $role . '_provider', $role . '_api_base', ( 'embed' === $role ) ? 'embeddings_model' : 'chat_model' );
+							if ( 'embed' === $role ) {
+								// The vector size belongs to the same set: a new
+								// dimension count next to the previous model is a
+								// combination the search index cannot serve.
+								$rollback_keys[] = 'embeddings_dims';
+							}
+							foreach ( $rollback_keys as $rollback_key ) {
+								$values[ $rollback_key ] = $current[ $rollback_key ];
+							}
+							$ai_rolled_back[ $role ] = true;
+							add_settings_error(
+								'ks_concierge',
+								'ks_concierge_encrypt_failed_' . $role,
+								sprintf(
+									/* translators: %s: role label (search AI / answer AI). */
+									__( '%s のAPIキーを暗号化して保存できませんでした（この環境では libsodium が使えません）。キーは変更していません。wp-config.php に定数で設定する方法もあります。', 'kashiwazaki-seo-concierge' ),
+									( 'embed' === $role ) ? __( '検索AI', 'kashiwazaki-seo-concierge' ) : __( '回答AI', 'kashiwazaki-seo-concierge' )
+								),
+								'error'
+							);
+						} else {
+							$values[ $map_key ][ $values[ $role . '_provider' ] ] = $cipher;
+						}
+					}
+
 				}
 				break;
 			case 'index':
 				$values['reindex_interval']   = isset( $in['reindex_interval'] ) ? sanitize_key( $in['reindex_interval'] ) : 'daily';
 				$values['exclude_rules']      = isset( $in['exclude_rules'] ) ? sanitize_textarea_field( $in['exclude_rules'] ) : '';
 				$values['priority_rules']     = isset( $in['priority_rules'] ) ? sanitize_textarea_field( $in['priority_rules'] ) : '';
+				$priority_rules_changed       = ( $values['priority_rules'] !== $current['priority_rules'] );
 				$values['reachability_check'] = ! empty( $in['reachability_check'] );
 				break;
 			case 'display':
@@ -201,6 +316,55 @@ class Ks_Concierge_Admin {
 
 		$old_sig = Ks_Concierge_Embeddings::current_embed_sig();
 		Ks_Concierge_Settings::update( $values );
+
+		// Priority is otherwise only assigned while indexing, so a rule change had
+		// no effect on pages already indexed. Re-apply it now, which also drops
+		// answers cached under the previous ordering.
+		if ( ! empty( $priority_rules_changed ) ) {
+			// Recomputed inline only while the index is small enough to finish
+			// inside the save request. Beyond that the work is handed to the
+			// existing reindex job, so a large site does not hit the PHP time
+			// limit on a settings save.
+			$page_count = Ks_Concierge_Cache::page_count();
+			/**
+			 * Filter the index size above which priority recalculation is deferred.
+			 *
+			 * @param int $max Page count handled inline.
+			 */
+			$inline_max = (int) apply_filters( 'ks_concierge_priority_inline_max', 2000 );
+			if ( $page_count > $inline_max ) {
+				// Dedicated job: the reindex only refreshes priority as a side
+				// effect of discovery, which it skips while a drain is already
+				// running, so it cannot be relied on to apply this change.
+				delete_option( Ks_Concierge_Cache::PRIORITY_STATE_KEY );
+				wp_schedule_single_event( time() + 5, Ks_Concierge_Cache::PRIORITY_HOOK );
+				add_settings_error(
+					'ks_concierge',
+					'ks_concierge_priority_deferred',
+					sprintf(
+						/* translators: %s: number of indexed pages. */
+						__( '優先ルールを保存しました。対象が %s ページと多いため、既存ページへの反映はバックグラウンドで行います。', 'kashiwazaki-seo-concierge' ),
+						number_format_i18n( $page_count )
+					),
+					'info'
+				);
+				$reprioritized = 0;
+			} else {
+				$reprioritized = ( new Ks_Concierge_Cache() )->recalculate_priorities();
+			}
+			if ( $reprioritized > 0 ) {
+				add_settings_error(
+					'ks_concierge',
+					'ks_concierge_priority_recalculated',
+					sprintf(
+						/* translators: %s: number of pages whose priority changed. */
+						__( '優先ルールの変更を既存の %s ページに反映しました。', 'kashiwazaki-seo-concierge' ),
+						number_format_i18n( $reprioritized )
+					),
+					'info'
+				);
+			}
+		}
 		$new_sig = Ks_Concierge_Embeddings::current_embed_sig();
 
 		// Embedding configuration changed: start a fresh reindex drain so the new
@@ -208,9 +372,17 @@ class Ks_Concierge_Admin {
 		// wipe); search already filters to the current signature.
 		if ( $old_sig !== $new_sig ) {
 			delete_option( Ks_Concierge_Cache::STATE_KEY );
-			if ( ! wp_next_scheduled( Ks_Concierge_Cache::CRON_HOOK ) ) {
-				wp_schedule_single_event( time() + 5, Ks_Concierge_Cache::CRON_HOOK );
-			}
+			// Scheduled unconditionally. The recurring event for this hook is
+			// always registered, so gating on wp_next_scheduled() meant the
+			// rebuild was never queued and search stayed empty until the next
+			// scheduled run — with the screen reporting only "saved".
+			wp_schedule_single_event( time() + 5, Ks_Concierge_Cache::CRON_HOOK );
+			add_settings_error(
+				'ks_concierge',
+				'ks_concierge_reindex_queued',
+				__( '検索AIの設定が変わったため、インデックスの再構築を開始しました。完了するまでは新しい設定での検索結果が揃いません（インデックスタブで進捗を確認できます）。', 'kashiwazaki-seo-concierge' ),
+				'warning'
+			);
 		}
 
 		// Reschedule cron if the interval changed.
@@ -290,6 +462,34 @@ class Ks_Concierge_Admin {
 			</style>
 			<h1>Kashiwazaki SEO Concierge</h1>
 			<?php settings_errors( 'ks_concierge' ); ?>
+			<?php
+			// Surface the last AI failure. A bad key or endpoint otherwise shows up
+			// only as the visitor-facing "no page found" reply, with no clue here.
+			$role_labels = array(
+				'embed' => __( '検索AI', 'kashiwazaki-seo-concierge' ),
+				'chat'  => __( '回答AI', 'kashiwazaki-seo-concierge' ),
+			);
+			foreach ( $role_labels as $err_role => $role_label ) :
+				$last = Ks_Concierge_OpenAI::last_error( $err_role );
+				if ( ! $last ) {
+					continue;
+				}
+				?>
+				<div class="notice notice-error"><p>
+					<?php
+					printf(
+						/* translators: 1: role label, 2: provider id, 3: model name, 4: local time, 5: error message. */
+						esc_html__( '%1$s（%2$s / %3$s）の呼び出しが失敗しています。%4$s：%5$s', 'kashiwazaki-seo-concierge' ),
+						esc_html( $role_label ),
+						esc_html( isset( $last['provider'] ) ? $last['provider'] : '' ),
+						esc_html( isset( $last['model'] ) ? $last['model'] : '' ),
+						esc_html( isset( $last['time'] ) ? wp_date( 'Y-m-d H:i', (int) $last['time'] ) : '' ),
+						esc_html( isset( $last['message'] ) ? $last['message'] : '' )
+					);
+					?>
+					<br><?php esc_html_e( 'APIキーが、選んでいるサービスのものになっているか確認してください。成功すると、この表示は自動で消えます。', 'kashiwazaki-seo-concierge' ); ?>
+				</p></div>
+			<?php endforeach; ?>
 			<?php if ( ! Ks_Concierge_OpenAI::has_key( 'embed' ) || ! Ks_Concierge_OpenAI::has_key( 'chat' ) ) : ?>
 				<div class="notice notice-warning"><p>
 					<?php
@@ -318,8 +518,24 @@ class Ks_Concierge_Admin {
 			<?php if ( get_transient( 'ks_concierge_settings_saved' ) ) : delete_transient( 'ks_concierge_settings_saved' ); ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( '設定を保存しました。', 'kashiwazaki-seo-concierge' ); ?></p></div>
 			<?php endif; ?>
-			<?php if ( isset( $_GET['reindexed'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
-				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'インデックスを再構築しました。', 'kashiwazaki-seo-concierge' ); ?></p></div>
+			<?php
+			// A manual rebuild processes one batch inline and hands the rest to cron,
+			// so this cannot claim completion: on a site with hundreds of pages most
+			// of them are still unprocessed at this moment. Report what actually
+			// happened, and where the remaining progress can be seen.
+			if ( isset( $_GET['reindexed'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$reindex_state = get_option( Ks_Concierge_Cache::STATE_KEY, array() );
+				$still_running = is_array( $reindex_state ) && ! empty( $reindex_state['active'] );
+				?>
+				<div class="notice notice-<?php echo $still_running ? 'info' : 'success'; ?> is-dismissible"><p>
+					<?php
+					if ( $still_running ) {
+						esc_html_e( 'インデックスの再構築を開始しました。残りはバックグラウンドで順次処理します（このタブの「インデックスの状態」で進捗を確認できます）。', 'kashiwazaki-seo-concierge' );
+					} else {
+						esc_html_e( 'インデックスの再構築が完了しました。', 'kashiwazaki-seo-concierge' );
+					}
+					?>
+				</p></div>
 			<?php endif; ?>
 			<?php if ( isset( $_GET['linkcheck'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'リンク到達性チェックを開始しました（バックグラウンドで順次実行します）。', 'kashiwazaki-seo-concierge' ); ?></p></div>
@@ -480,16 +696,16 @@ class Ks_Concierge_Admin {
 
 				echo '<tr><td colspan="2"><hr><strong>' . esc_html__( '① 検索AI（質問に関係するページを探す）', 'kashiwazaki-seo-concierge' ) . '</strong></td></tr>';
 				$this->field_select( 'embed_provider', __( '検索AI：使うサービス', 'kashiwazaki-seo-concierge' ), $s['embed_provider'], $embed_provider_opts, __( '関連ページを探す検索AIに使うサービス。OpenAIが安価で確実です（GLMやOllama Cloudは検索には使えません）。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_text( 'embed_api_base', __( '検索AI：接続先URL', 'kashiwazaki-seo-concierge' ), '' !== (string) $s['embed_api_base'] ? $s['embed_api_base'] : Ks_Concierge_Settings::provider_default_base( $s['embed_provider'], 'embed' ), '', __( '検索AIの接続先。通常は空欄でOK（選んだサービスの既定URLが自動で使われます）。独自サーバーを使う時だけ入力します。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_password( 'embed_api_key', __( '検索AI：APIキー', 'kashiwazaki-seo-concierge' ), '' !== (string) $s['embed_api_key_cipher'], __( '検索AIサービスのAPIキー。各自のアカウントで取得して貼り付けます。安全のため保存後は表示されません（入力した時だけ更新されます）。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_text( 'embed_api_base', __( '検索AI：接続先URL', 'kashiwazaki-seo-concierge' ), (string) $s['embed_api_base'], Ks_Concierge_Settings::provider_default_base( $s['embed_provider'], 'embed' ), __( '検索AIの接続先。通常は空欄でOK（選んだサービスの既定URLが自動で使われます）。独自サーバーを使う時だけ入力します。空欄のまま保存すれば、今後サービス側の既定URLが変わっても自動で追従します。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_password( 'embed_api_key', __( '検索AI：APIキー', 'kashiwazaki-seo-concierge' ), Ks_Concierge_Settings::has_stored_key( 'embed' ), __( '検索AIサービスのAPIキー。各自のアカウントで取得して貼り付けます。キーは上で選んだサービスごとに保存されるので、サービスを切り替えたら、そのサービスのキーを一度入力してください。安全のため保存後は表示されません（入力した時だけ更新されます）。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_text( 'embeddings_model', __( '検索AI：モデル名', 'kashiwazaki-seo-concierge' ), $s['embeddings_model'], '', __( '使う埋め込みモデルの名前。OpenAIなら text-embedding-3-small（安価・推奨）または text-embedding-3-large（高精度）。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_number( 'embeddings_dims', __( '検索AI：次元数', 'kashiwazaki-seo-concierge' ), $s['embeddings_dims'], __( '検索データの精細さ（ベクトルの次元数）。OpenAIの3系のみ変更可。通常は既定のままでOKです。', 'kashiwazaki-seo-concierge' ) );
 
 				echo '<tr><td colspan="2"><hr><strong>' . esc_html__( '② 回答AI（見つけたページから回答文を作る）', 'kashiwazaki-seo-concierge' ) . '</strong></td></tr>';
 				$this->field_select( 'chat_provider', __( '回答AI：使うサービス', 'kashiwazaki-seo-concierge' ), $s['chat_provider'], $chat_provider_opts, __( '回答文を作る回答AIに使うサービス。OpenAI・GLM・Ollama Cloud などから選べます。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_text( 'chat_api_base', __( '回答AI：接続先URL', 'kashiwazaki-seo-concierge' ), '' !== (string) $s['chat_api_base'] ? $s['chat_api_base'] : Ks_Concierge_Settings::provider_default_base( $s['chat_provider'], 'chat' ), '', __( '回答AIの接続先。通常は空欄でOK（既定URLが自動）。独自サーバーを使う時だけ入力します。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_password( 'chat_api_key', __( '回答AI：APIキー', 'kashiwazaki-seo-concierge' ), '' !== (string) $s['chat_api_key_cipher'], __( '回答AIサービスのAPIキー。ローカルOllama以外は必須です。保存後は表示されません（入力した時だけ更新）。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_text( 'chat_model', __( '回答AI：モデル名', 'kashiwazaki-seo-concierge' ), $s['chat_model'], '', __( '使うモデルの名前。OpenAIなら gpt-4o-mini（最安・高速・推奨）。GLMは glm-4.6、Ollama Cloudは qwen3-coder:480b など。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_text( 'chat_api_base', __( '回答AI：接続先URL', 'kashiwazaki-seo-concierge' ), (string) $s['chat_api_base'], Ks_Concierge_Settings::provider_default_base( $s['chat_provider'], 'chat' ), __( '回答AIの接続先。通常は空欄でOK（既定URLが自動）。独自サーバーを使う時だけ入力します。空欄のまま保存すれば、今後サービス側の既定URLが変わっても自動で追従します。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_password( 'chat_api_key', __( '回答AI：APIキー', 'kashiwazaki-seo-concierge' ), Ks_Concierge_Settings::has_stored_key( 'chat' ), __( '回答AIサービスのAPIキー。ローカルOllama以外は必須です。キーは上で選んだサービスごとに保存されるので、サービスを切り替えたら、そのサービスのキーを一度入力してください。保存後は表示されません（入力した時だけ更新）。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_text( 'chat_model', __( '回答AI：モデル名', 'kashiwazaki-seo-concierge' ), $s['chat_model'], '', __( '使うモデルの名前。OpenAIなら gpt-4o-mini（最安・高速・推奨）。GLMは glm-4.6 など。Ollama Cloud は提供モデルの入れ替えが多いため、ollama.com の一覧で現在使えるモデル名を確認して入力してください。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_select( 'chat_structured_mode', __( '回答の出力形式（上級者向け）', 'kashiwazaki-seo-concierge' ), $s['chat_structured_mode'], array(
 					'auto'        => __( '自動（おすすめ）', 'kashiwazaki-seo-concierge' ),
 					'json_schema' => 'json_schema (strict)',
@@ -578,7 +794,7 @@ class Ks_Concierge_Admin {
 					'weekly'     => __( '毎週', 'kashiwazaki-seo-concierge' ),
 				), __( 'サイト内容を取り込み直す頻度。通常は毎日でOK。即時反映は「今すぐ再構築」。低トラフィックのサイトはサーバー実cron（DISABLE_WP_CRON）を推奨。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_textarea( 'exclude_rules', __( '検索から除外するURL', 'kashiwazaki-seo-concierge' ), $s['exclude_rules'], __( '検索から外したいURLの一部を1行ずつ。例：/tag/ や /category/。保存で即反映。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_textarea( 'priority_rules', __( '優先して表示するURL', 'kashiwazaki-seo-concierge' ), $s['priority_rules'], __( '上位に出したいURLの一部を1行ずつ。重要ページを入れると回答に出やすくなります。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_textarea( 'priority_rules', __( '優先して表示するURL', 'kashiwazaki-seo-concierge' ), $s['priority_rules'], __( '重要ページのURLの一部を1行ずつ。2つのはたらきがあります。(1) 検索の結果が同点になったとき、ここに登録したページを先に出します（関連度そのものは書き換えません）。(2) 該当ページが見つからなかったときの「代わりの案内」に使います。空欄だとその代替案内は表示されません。保存すると既存のページにも即座に反映します。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_checkbox( 'reachability_check', __( 'リンク到達性チェック', 'kashiwazaki-seo-concierge' ), ! empty( $s['reachability_check'] ), __( '見つからない（404）・エラー（403・500・タイムアウト等）のページを回答候補から自動で外します。直れば自動で戻ります。', 'kashiwazaki-seo-concierge' ) );
 				break;
 			case 'display':
@@ -599,9 +815,9 @@ class Ks_Concierge_Admin {
 				echo '<tr><td colspan="2"><hr><strong>' . esc_html__( '💰 料金の上限（暴走課金の防止）', 'kashiwazaki-seo-concierge' ) . '</strong></td></tr>';
 				$this->field_number( 'cost_limit_daily', __( '1日の上限金額（USD）', 'kashiwazaki-seo-concierge' ), $s['cost_limit_daily'], __( '1日にAIへ使う金額の上限（米ドル）。これを超えると自動で停止し、それ以上は課金されません。既定は$5。0にすると無制限（非推奨）。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_number( 'cost_limit_monthly', __( '1か月の上限金額（USD）', 'kashiwazaki-seo-concierge' ), $s['cost_limit_monthly'], __( '1か月にAIへ使う金額の上限（米ドル）。超えると自動停止。既定は$50。0で無制限（非推奨）。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_number( 'request_limit_daily', __( '1日の問い合わせ回数の上限', 'kashiwazaki-seo-concierge' ), $s['request_limit_daily'], __( '1日にAIへ送る回数の上限（検索＋回答の合計）。無限ループなどの暴走を防ぐ保険です。既定は10000。0で無効。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_number( 'request_limit_daily', __( '1日の問い合わせ回数の上限', 'kashiwazaki-seo-concierge' ), $s['request_limit_daily'], __( '1日にAIへ送るリクエスト数の上限。訪問者の質問だけでなく、インデックス再構築の処理や、失敗したときの再試行も1回として数えます。無限ループなどの暴走を防ぐ保険です。既定は10000。0で無効。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_number( 'request_limit_monthly', __( '1か月の問い合わせ回数の上限', 'kashiwazaki-seo-concierge' ), $s['request_limit_monthly'], __( '1か月にAIへ送る回数の上限。既定は200000。0で無効。', 'kashiwazaki-seo-concierge' ) );
-				$this->field_number( 'token_limit_daily', __( '1日のトークン上限（上級者）', 'kashiwazaki-seo-concierge' ), $s['token_limit_daily'], __( '料金を自動計算できないプロバイダ向けの保険。1日のトークン数の上限。OpenAI等を使うなら0（無効）でOK。', 'kashiwazaki-seo-concierge' ) );
+				$this->field_number( 'token_limit_daily', __( '1日のトークン上限（上級者）', 'kashiwazaki-seo-concierge' ), $s['token_limit_daily'], __( '金額で止められない場合の保険。1日のトークン数の上限です。月額定額のサービス（Ollama Cloud など）や料金を自動計算できないサービスでは金額上限が働かないため、「1日の問い合わせ回数の上限」とこの項目が歯止めになります。その場合は両方とも0（無効）にしないでください。OpenAI など従量課金のみを使う場合は0でも構いません。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_number( 'token_limit_monthly', __( '1か月のトークン上限（上級者）', 'kashiwazaki-seo-concierge' ), $s['token_limit_monthly'], __( '同上の1か月版。OpenAI等を使うなら0（無効）でOK。', 'kashiwazaki-seo-concierge' ) );
 
 				echo '<tr><td colspan="2"><hr><strong>' . esc_html__( '🛡️ 不正利用・個人情報の対策', 'kashiwazaki-seo-concierge' ) . '</strong></td></tr>';
@@ -620,9 +836,12 @@ class Ks_Concierge_Admin {
 				$this->field_checkbox( 'trust_cloudflare', __( 'Cloudflare 経由のサイト', 'kashiwazaki-seo-concierge' ), ! empty( $s['trust_cloudflare'] ), __( 'Cloudflare 経由のサイトでオン。本当の訪問者IPを記録でき、連投制限も本人単位で効きます。使っていなければオフのまま。', 'kashiwazaki-seo-concierge' ) );
 				$this->field_textarea( 'trusted_proxies', __( '信頼するプロキシ（上級者向け・1行に1つ・CIDR可）', 'kashiwazaki-seo-concierge' ), $s['trusted_proxies'], __( 'Cloudflare 以外のプロキシ経由時、その送信元IP/CIDRを記入（例：10.0.0.0/8）。不明なら空欄でOK。', 'kashiwazaki-seo-concierge' ) );
 				echo '</table>';
+				// The request cap bounds the number of calls, not their cost: a
+				// single call can be arbitrarily expensive. So the warning keys on
+				// the money and token caps only — leaving those at 0 is unbounded
+				// spend even with a request cap in place.
 				if ( (float) $s['cost_limit_daily'] <= 0 && (float) $s['cost_limit_monthly'] <= 0
-					&& (int) $s['token_limit_daily'] <= 0 && (int) $s['token_limit_monthly'] <= 0
-					&& (int) $s['request_limit_daily'] <= 0 && (int) $s['request_limit_monthly'] <= 0 ) {
+					&& (int) $s['token_limit_daily'] <= 0 && (int) $s['token_limit_monthly'] <= 0 ) {
 					echo '<div class="notice notice-warning inline"><p>' . esc_html__( '課金上限がすべて 0（無制限）です。有料プロバイダ利用時は青天井課金のリスクがあります。USD 上限またはトークン上限の設定を推奨します。', 'kashiwazaki-seo-concierge' ) . '</p></div>';
 				}
 				echo '<p class="description">' . esc_html__( '質問は選択した AI プロバイダへ送信されます。PIIマスクは正規表現ベースの best-effort で完全ではありません。', 'kashiwazaki-seo-concierge' ) . '</p><table class="form-table" role="presentation">';
@@ -688,6 +907,12 @@ class Ks_Concierge_Admin {
 			.ks-analytics .ks-url--clicked{background:#e6f4ea;border-color:#acdcb8;color:#1e7e34;font-weight:600}
 			.ks-analytics .ks-time{white-space:nowrap;color:#646970;font-size:12px}
 			.ks-analytics .ks-pager{margin:12px 0;display:flex;align-items:center;gap:10px}
+			.ks-analytics .ks-history td form{margin:0}
+			.ks-analytics .ks-delete{color:#b32d2e;text-decoration:none;cursor:pointer}
+			.ks-analytics .ks-delete:hover{color:#8a2424;text-decoration:underline}
+			.ks-analytics .ks-log-actions{margin-top:1em;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+			.ks-analytics .ks-clear-logs{color:#b32d2e;border-color:#b32d2e}
+			.ks-analytics .ks-clear-logs:hover{background:#fde7e9;color:#8a2424;border-color:#8a2424}
 		</style>
 		<div class="ks-analytics">
 			<div class="ks-cards">
@@ -715,6 +940,25 @@ class Ks_Concierge_Admin {
 			</tbody></table>
 
 			<h2><?php esc_html_e( '質問と回答の履歴', 'kashiwazaki-seo-concierge' ); ?></h2>
+			<?php
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$notice = isset( $_GET['ks_notice'] ) ? sanitize_key( wp_unslash( $_GET['ks_notice'] ) ) : '';
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$notice_count = isset( $_GET['ks_deleted'] ) ? absint( wp_unslash( $_GET['ks_deleted'] ) ) : 0;
+			if ( 'deleted' === $notice || 'cleared' === $notice ) :
+				?>
+				<div class="notice notice-success inline"><p>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %s: number of deleted rows. */
+							_n( '履歴を %s 件削除しました。', '履歴を %s 件削除しました。', $notice_count, 'kashiwazaki-seo-concierge' ),
+							number_format_i18n( $notice_count )
+						)
+					);
+					?>
+				</p></div>
+			<?php endif; ?>
 			<div class="ks-subnav">
 				<?php foreach ( $scope_labels as $key => $label ) : ?>
 					<a class="<?php echo $scope === $key ? 'active' : ''; ?>" href="<?php echo esc_url( add_query_arg( array( 'log_scope' => $key, 'log_page' => 1 ) ) ); ?>"><?php echo esc_html( $label ); ?></a>
@@ -726,6 +970,7 @@ class Ks_Concierge_Admin {
 					<th style="width:90px"><?php esc_html_e( '種別', 'kashiwazaki-seo-concierge' ); ?></th>
 					<th><?php esc_html_e( '質問・回答・案内したURL', 'kashiwazaki-seo-concierge' ); ?></th>
 					<th style="width:80px"><?php esc_html_e( '結果', 'kashiwazaki-seo-concierge' ); ?></th>
+					<th style="width:70px"><?php esc_html_e( '操作', 'kashiwazaki-seo-concierge' ); ?></th>
 				</tr></thead>
 				<tbody>
 				<?php if ( $logs ) : foreach ( $logs as $row ) : ?>
@@ -741,13 +986,13 @@ class Ks_Concierge_Admin {
 								<div class="ks-ip" style="font-size:11px;color:#555;margin-top:4px;word-break:break-all;"><?php echo esc_html( (string) $row->ip ); ?></div>
 							<?php endif; ?>
 							<?php if ( ! empty( $row->user_agent ) ) : ?>
-								<div class="ks-ua" style="font-size:11px;color:#888;margin-top:2px;" title="<?php echo esc_attr( (string) $row->user_agent ); ?>"><?php echo esc_html( mb_strimwidth( (string) $row->user_agent, 0, 38, '…' ) ); ?></div>
+								<div class="ks-ua" style="font-size:11px;color:#888;margin-top:2px;" title="<?php echo esc_attr( (string) $row->user_agent ); ?>"><?php echo esc_html( self::truncate( (string) $row->user_agent, 38 ) ); ?></div>
 							<?php endif; ?>
 						</td>
 						<td>
 							<div class="ks-q"><?php echo esc_html( $row->question ); ?></div>
 							<?php if ( '' !== (string) $row->answer ) : ?>
-								<div class="ks-a"><?php echo esc_html( mb_strimwidth( (string) $row->answer, 0, 160, '…' ) ); ?></div>
+								<div class="ks-a"><?php echo esc_html( self::truncate( (string) $row->answer, 160 ) ); ?></div>
 							<?php endif; ?>
 							<?php
 							$urls    = json_decode( (string) $row->matched_urls, true );
@@ -777,9 +1022,18 @@ class Ks_Concierge_Admin {
 								<span class="ks-badge ks-badge--ng"><?php esc_html_e( '未ヒット', 'kashiwazaki-seo-concierge' ); ?></span>
 							<?php endif; ?>
 						</td>
+						<td>
+							<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-ks-confirm="<?php esc_attr_e( 'この履歴を削除します。元に戻せません。よろしいですか？', 'kashiwazaki-seo-concierge' ); ?>">
+								<?php wp_nonce_field( 'ks_concierge_delete_log' ); ?>
+								<input type="hidden" name="action" value="ks_concierge_delete_log" />
+								<input type="hidden" name="log_id" value="<?php echo (int) $row->id; ?>" />
+								<input type="hidden" name="log_scope" value="<?php echo esc_attr( $scope ); ?>" />
+								<button type="submit" class="button-link ks-delete"><?php esc_html_e( '削除', 'kashiwazaki-seo-concierge' ); ?></button>
+							</form>
+						</td>
 					</tr>
 				<?php endforeach; else : ?>
-					<tr><td colspan="4"><?php esc_html_e( 'まだ履歴がありません。', 'kashiwazaki-seo-concierge' ); ?></td></tr>
+					<tr><td colspan="5"><?php esc_html_e( 'まだ履歴がありません。', 'kashiwazaki-seo-concierge' ); ?></td></tr>
 				<?php endif; ?>
 				</tbody>
 			</table>
@@ -801,11 +1055,46 @@ class Ks_Concierge_Admin {
 				<p class="description"><?php echo esc_html( sprintf( /* translators: %s: total rows. */ __( '全 %s 件', 'kashiwazaki-seo-concierge' ), number_format_i18n( $total ) ) ); ?></p>
 			<?php endif; ?>
 
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:1em;">
-				<?php wp_nonce_field( 'ks_concierge_export_logs' ); ?>
-				<input type="hidden" name="action" value="ks_concierge_export_logs" />
-				<?php submit_button( __( 'すべてのログをCSVエクスポート', 'kashiwazaki-seo-concierge' ), 'secondary', 'submit', false ); ?>
-			</form>
+			<div class="ks-log-actions">
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<?php wp_nonce_field( 'ks_concierge_export_logs' ); ?>
+					<input type="hidden" name="action" value="ks_concierge_export_logs" />
+					<?php submit_button( __( 'すべてのログをCSVエクスポート', 'kashiwazaki-seo-concierge' ), 'secondary', 'submit', false ); ?>
+				</form>
+				<?php
+				// The clear button removes exactly what the current filter shows, so
+				// "管理者テストのみ" + clear wipes the test rows and keeps real ones.
+				$clear_labels = array(
+					'all'     => __( '履歴をすべて削除', 'kashiwazaki-seo-concierge' ),
+					'visitor' => __( '訪問者の履歴をすべて削除', 'kashiwazaki-seo-concierge' ),
+					'admin'   => __( '管理者テストの履歴をすべて削除', 'kashiwazaki-seo-concierge' ),
+				);
+				$clear_confirms = array(
+					'all'     => __( 'すべての履歴を削除します。元に戻せません。よろしいですか？', 'kashiwazaki-seo-concierge' ),
+					'visitor' => __( '訪問者の履歴をすべて削除します。元に戻せません。よろしいですか？', 'kashiwazaki-seo-concierge' ),
+					'admin'   => __( '管理者テストの履歴をすべて削除します。元に戻せません。よろしいですか？', 'kashiwazaki-seo-concierge' ),
+				);
+				if ( $total > 0 ) :
+					?>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-ks-confirm="<?php echo esc_attr( $clear_confirms[ $scope ] ); ?>">
+						<?php wp_nonce_field( 'ks_concierge_clear_logs' ); ?>
+						<input type="hidden" name="action" value="ks_concierge_clear_logs" />
+						<input type="hidden" name="log_scope" value="<?php echo esc_attr( $scope ); ?>" />
+						<button type="submit" class="button ks-clear-logs">
+							<?php
+							echo esc_html(
+								sprintf(
+									/* translators: 1: action label, 2: row count. */
+									__( '%1$s（%2$s件）', 'kashiwazaki-seo-concierge' ),
+									$clear_labels[ $scope ],
+									number_format_i18n( $total )
+								)
+							);
+							?>
+						</button>
+					</form>
+				<?php endif; ?>
+			</div>
 			<p class="description"><?php
 				/* translators: %d: retention days. */
 				echo esc_html( sprintf( __( '履歴は「プライバシー・安全」で設定した保存日数（現在 %d 日）を過ぎると自動的に削除されます。古いものから消えるため、件数が無制限に増え続けることはありません。', 'kashiwazaki-seo-concierge' ), (int) Ks_Concierge_Settings::get( 'log_retention_days', 90 ) ) );
@@ -821,6 +1110,30 @@ class Ks_Concierge_Admin {
 	 * @param string $url Full URL.
 	 * @return string
 	 */
+	/**
+	 * Shorten a string for display, with an ellipsis when it was cut.
+	 *
+	 * mb_strimwidth() is used when available but is not called directly: unlike
+	 * mb_substr() and mb_strlen(), WordPress does not polyfill it, so on a build
+	 * without mbstring the call is an undefined function — a fatal Error in
+	 * PHP 8 that takes the whole screen down rather than degrading the text.
+	 *
+	 * @param string $text  Source text.
+	 * @param int    $width Maximum display width.
+	 * @return string
+	 */
+	protected static function truncate( $text, $width ) {
+		$text = (string) $text;
+		if ( function_exists( 'mb_strimwidth' ) ) {
+			return mb_strimwidth( $text, 0, $width, '…' );
+		}
+		if ( function_exists( 'mb_substr' ) && function_exists( 'mb_strlen' ) ) {
+			// Polyfilled by WordPress, so always available in practice.
+			return ( mb_strlen( $text ) > $width ) ? mb_substr( $text, 0, max( 1, $width - 1 ) ) . '…' : $text;
+		}
+		return ( strlen( $text ) > $width ) ? substr( $text, 0, max( 1, $width - 1 ) ) . '…' : $text;
+	}
+
 	protected function short_url( $url ) {
 		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
 		if ( '' === $path || '/' === $path ) {
@@ -828,7 +1141,7 @@ class Ks_Concierge_Admin {
 		} else {
 			$path = rawurldecode( $path );
 		}
-		return mb_strimwidth( $path, 0, 48, '…' );
+		return self::truncate( $path, 48 );
 	}
 
 	/**

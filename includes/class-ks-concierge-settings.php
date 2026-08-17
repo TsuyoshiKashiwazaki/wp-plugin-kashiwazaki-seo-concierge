@@ -20,6 +20,13 @@ class Ks_Concierge_Settings {
 	const OPTION_KEY = 'ks_concierge_settings';
 
 	/**
+	 * Selectable providers.
+	 *
+	 * @var string[]
+	 */
+	const PROVIDERS = array( 'openai', 'zai', 'ollama', 'custom' );
+
+	/**
 	 * Cached settings array.
 	 *
 	 * @var array<string,mixed>|null
@@ -46,6 +53,13 @@ class Ks_Concierge_Settings {
 			'chat_provider'         => 'openai',
 			'chat_api_base'         => '',
 			'chat_api_key_cipher'   => '',
+			// API keys are kept per provider, so switching the provider dropdown
+			// selects that provider's own key instead of sending the previously
+			// selected provider's key to the new endpoint (a guaranteed 401 that
+			// surfaces only as the visitor-facing "no page found" fallback).
+			// Shape: array<provider-id, cipher>.
+			'embed_api_key_ciphers' => array(),
+			'chat_api_key_ciphers'  => array(),
 			'chat_structured_mode'  => 'auto',
 			// Custom-provider per-million-token prices (USD). 0 = unresolved, in
 			// which case the token backstop applies (see cost limits below).
@@ -113,6 +127,16 @@ class Ks_Concierge_Settings {
 			self::$cache = wp_parse_args( $stored, self::defaults() );
 		}
 		return self::$cache;
+	}
+
+	/**
+	 * Drop the in-process settings cache, so the next read reloads from storage.
+	 * Needed after a migration writes the option behind this class's back.
+	 *
+	 * @return void
+	 */
+	public static function flush_cache() {
+		self::$cache = null;
 	}
 
 	/**
@@ -190,7 +214,57 @@ class Ks_Concierge_Settings {
 	public static function get_provider( $role ) {
 		$key      = ( 'embed' === $role ) ? 'embed_provider' : 'chat_provider';
 		$provider = (string) self::get( $key, 'openai' );
-		return in_array( $provider, array( 'openai', 'zai', 'ollama', 'custom' ), true ) ? $provider : 'openai';
+		return in_array( $provider, self::PROVIDERS, true ) ? $provider : 'openai';
+	}
+
+	/**
+	 * Human-readable name of the service a role's questions are sent to.
+	 *
+	 * Used in the visitor consent notice and the suggested privacy policy text,
+	 * which must name the party that actually receives the question. Naming a
+	 * fixed provider there while the administrator has selected another one
+	 * would make the visitor consent to a transfer that is not the one taking
+	 * place. A custom endpoint has no brand name, so its host is shown.
+	 *
+	 * @param string $role embed|chat.
+	 * @return string
+	 */
+	public static function provider_label( $role ) {
+		$provider = self::get_provider( $role );
+		if ( self::is_local_free( $role ) ) {
+			return __( 'このサイトのサーバー内のAI', 'kashiwazaki-seo-concierge' );
+		}
+		switch ( $provider ) {
+			case 'openai':
+				return 'OpenAI';
+			case 'zai':
+				return 'Z.AI (GLM)';
+			case 'ollama':
+				return 'Ollama Cloud';
+			default:
+				$host = (string) wp_parse_url( self::get_api_base( $role ), PHP_URL_HOST );
+				/* translators: %s: API endpoint host name. */
+				return '' !== $host ? sprintf( __( '外部AIサービス (%s)', 'kashiwazaki-seo-concierge' ), $host ) : __( '外部AIサービス', 'kashiwazaki-seo-concierge' );
+		}
+	}
+
+	/**
+	 * The distinct services a visitor's question reaches, as a display string.
+	 *
+	 * A question is sent twice — once to find pages, once to write the answer —
+	 * and the two roles can use different services, so both are named unless
+	 * they are the same.
+	 *
+	 * @return string
+	 */
+	public static function recipient_label() {
+		$embed = self::provider_label( 'embed' );
+		$chat  = self::provider_label( 'chat' );
+		if ( $embed === $chat ) {
+			return $embed;
+		}
+		/* translators: 1: search AI service name, 2: answer AI service name. */
+		return sprintf( __( '%1$s と %2$s', 'kashiwazaki-seo-concierge' ), $embed, $chat );
 	}
 
 	/**
@@ -231,12 +305,37 @@ class Ks_Concierge_Settings {
 	}
 
 	/**
+	 * Whether a role's provider bills a flat subscription rather than per token.
+	 *
+	 * Such a provider must not accrue estimated USD: the per-token price table
+	 * has no entry for its models, so the unknown-model fallback would invent a
+	 * per-token cost, and the USD cap would eventually stop answering while the
+	 * real invoice never moved. Volume is still bounded — the token and request
+	 * caps apply — but the money gauge is meaningless here and is left at zero.
+	 *
+	 * @param string $role embed|chat.
+	 * @return bool
+	 */
+	public static function is_flat_rate( $role ) {
+		$provider = self::get_provider( $role );
+		$flat     = ( 'ollama' === $provider ) && ! self::is_local_free( $role );
+		/**
+		 * Filter whether a role's provider is billed as a flat subscription.
+		 *
+		 * @param bool   $flat     Whether billing is flat-rate.
+		 * @param string $provider Provider id.
+		 * @param string $role     embed|chat.
+		 */
+		return (bool) apply_filters( 'ks_concierge_is_flat_rate', $flat, $provider, $role );
+	}
+
+	/**
 	 * Resolve the effective API key for a role.
 	 *
 	 * Resolution order (P = the role's provider):
 	 *   1. role constant (KS_CONCIERGE_EMBED_API_KEY / KS_CONCIERGE_CHAT_API_KEY)
 	 *   2. shared constant KS_CONCIERGE_API_KEY — ONLY when P = openai
-	 *   3. role cipher (embed_api_key_cipher / chat_api_key_cipher)
+	 *   3. the role's key stored for P (embed_api_key_ciphers / chat_api_key_ciphers)
 	 *   4. shared api_key_cipher — ONLY when P = openai
 	 *
 	 * The openai-only gate on steps 2 and 4 prevents an OpenAI key from ever
@@ -246,9 +345,8 @@ class Ks_Concierge_Settings {
 	 * @return string Empty string when no key is configured.
 	 */
 	public static function get_api_key( $role = 'chat' ) {
-		$provider     = self::get_provider( $role );
-		$role_const   = ( 'embed' === $role ) ? 'KS_CONCIERGE_EMBED_API_KEY' : 'KS_CONCIERGE_CHAT_API_KEY';
-		$role_cipher  = ( 'embed' === $role ) ? 'embed_api_key_cipher' : 'chat_api_key_cipher';
+		$provider   = self::get_provider( $role );
+		$role_const = ( 'embed' === $role ) ? 'KS_CONCIERGE_EMBED_API_KEY' : 'KS_CONCIERGE_CHAT_API_KEY';
 
 		// 1. Role-specific constant (applies to this role for any provider).
 		if ( defined( $role_const ) && '' !== (string) constant( $role_const ) ) {
@@ -258,8 +356,10 @@ class Ks_Concierge_Settings {
 		if ( 'openai' === $provider && defined( 'KS_CONCIERGE_API_KEY' ) && '' !== (string) constant( 'KS_CONCIERGE_API_KEY' ) ) {
 			return (string) constant( 'KS_CONCIERGE_API_KEY' );
 		}
-		// 3. Role-specific cipher.
-		$cipher = (string) self::get( $role_cipher, '' );
+		// 3. The key saved for this role's current provider. Keys of other
+		// providers are never used here: sending one to a different endpoint only
+		// produces a 401 that is invisible outside the server logs.
+		$cipher = self::provider_cipher( $role, $provider );
 		if ( '' !== $cipher ) {
 			$plain = self::decrypt( $cipher );
 			if ( false !== $plain && '' !== $plain ) {
@@ -275,6 +375,41 @@ class Ks_Concierge_Settings {
 			}
 		}
 		return '';
+	}
+
+	/**
+	 * The stored cipher for a role/provider pair, or an empty string.
+	 *
+	 * @param string $role     embed|chat.
+	 * @param string $provider Provider id.
+	 * @return string
+	 */
+	public static function provider_cipher( $role, $provider ) {
+		$map = self::get( ( 'embed' === $role ) ? 'embed_api_key_ciphers' : 'chat_api_key_ciphers', array() );
+		if ( ! is_array( $map ) || ! isset( $map[ $provider ] ) ) {
+			return '';
+		}
+		return (string) $map[ $provider ];
+	}
+
+	/**
+	 * Whether a key is on file for the role's currently selected provider. Used by
+	 * the settings screen to report "saved" per provider rather than per role, so
+	 * changing the provider dropdown immediately shows that its key is missing.
+	 *
+	 * @param string $role embed|chat.
+	 * @return bool
+	 */
+	public static function has_stored_key( $role = 'chat' ) {
+		if ( self::api_key_is_constant( $role ) ) {
+			return true;
+		}
+		$provider = self::get_provider( $role );
+		if ( '' !== self::provider_cipher( $role, $provider ) ) {
+			return true;
+		}
+		// Legacy shared cipher, still honoured for OpenAI.
+		return 'openai' === $provider && '' !== (string) self::get( 'api_key_cipher', '' );
 	}
 
 	/**

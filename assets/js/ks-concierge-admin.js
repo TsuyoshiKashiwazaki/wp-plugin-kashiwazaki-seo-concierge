@@ -4,11 +4,33 @@
 ( function () {
 	'use strict';
 
+	// Confirmation for irreversible actions. Bound here rather than written as an
+	// inline on* attribute: a Content-Security-Policy without unsafe-inline drops
+	// attribute handlers silently, which would delete history on the first click
+	// with no prompt at all. Delegated from the document so forms rendered later
+	// are covered too.
+	document.addEventListener( 'submit', function ( event ) {
+		var form = event.target;
+		if ( ! form || ! form.getAttribute ) {
+			return;
+		}
+		var message = form.getAttribute( 'data-ks-confirm' );
+		if ( ! message ) {
+			return;
+		}
+		if ( ! window.confirm( message ) ) {
+			event.preventDefault();
+		}
+	} );
+
+	// Everything below needs the localized config; the confirmation above must
+	// not, or a failed localization would silently restore delete-without-confirm.
 	if ( typeof window.ksConciergeAdmin === 'undefined' ) {
 		return;
 	}
 
 	var cfg = window.ksConciergeAdmin;
+
 
 	// AI tab: when the provider dropdown changes, repopulate that role's API base
 	// URL and model fields with the newly selected provider's defaults, so stale
@@ -31,9 +53,18 @@
 				var baseField = document.getElementById( 'ks_' + role + '_api_base' );
 				var modelField = document.getElementById( 'ks_' + ( 'embed' === role ? 'embeddings_model' : 'chat_model' ) );
 				if ( baseField ) {
-					baseField.value = d.base;
+					// The default goes in the placeholder, not the value: an empty
+					// field means "follow the provider default", so writing the URL
+					// in would freeze today's default into the database and stop it
+					// tracking future changes. Any URL the admin typed for the
+					// previous provider is cleared, since it does not apply here.
+					baseField.placeholder = d.base;
+					baseField.value = '';
 				}
-				if ( modelField && d.model ) {
+				if ( modelField ) {
+					// Assigned even when blank: a provider with no suggested model
+					// must clear the box rather than leave the previous provider's
+					// model name behind, which would be sent to the new endpoint.
 					modelField.value = d.model;
 				}
 			} );

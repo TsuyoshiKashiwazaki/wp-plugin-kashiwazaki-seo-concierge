@@ -28,7 +28,11 @@ class Ks_Concierge_Privacy {
 	}
 
 	/**
-	 * Suggested privacy policy text describing the external (OpenAI) processing.
+	 * Suggested privacy policy text describing the external processing.
+	 *
+	 * The recipient is named from the current settings rather than hard-coded:
+	 * the policy has to describe the transfer that actually happens, and the
+	 * administrator can point either role at a different service at any time.
 	 *
 	 * @return void
 	 */
@@ -37,7 +41,11 @@ class Ks_Concierge_Privacy {
 			return;
 		}
 		$content = wp_kses_post(
-			__( 'Kashiwazaki SEO Concierge sends visitor questions to OpenAI to generate guidance toward relevant pages on this site. Questions and selected pages may be stored temporarily for analytics and are subject to best-effort personal-data masking before storage. Data is retained for the configured retention period and then deleted.', 'kashiwazaki-seo-concierge' )
+			sprintf(
+				/* translators: %s: name(s) of the AI service questions are sent to. */
+				__( 'Kashiwazaki SEO Concierge sends visitor questions to %s to generate guidance toward relevant pages on this site. Questions and selected pages may be stored temporarily for analytics and are subject to best-effort personal-data masking before storage. Data is retained for the configured retention period and then deleted.', 'kashiwazaki-seo-concierge' ),
+				Ks_Concierge_Settings::recipient_label()
+			)
 		);
 		if ( (bool) Ks_Concierge_Settings::get( 'log_ip', true ) ) {
 			$content .= ' ' . wp_kses_post(
@@ -124,6 +132,10 @@ class Ks_Concierge_Privacy {
 	 * @return void
 	 */
 	public function prune_logs() {
+		// Same daily slot cleans up expired rate-limit rows: WordPress's own
+		// transient sweep does not touch them on sites with an object cache.
+		Ks_Concierge_Security::purge_expired_rate_limits();
+
 		global $wpdb;
 		$days = (int) Ks_Concierge_Settings::get( 'log_retention_days', 90 );
 		if ( $days <= 0 ) {

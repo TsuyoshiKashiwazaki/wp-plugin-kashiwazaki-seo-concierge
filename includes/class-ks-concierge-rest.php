@@ -170,7 +170,13 @@ class Ks_Concierge_REST {
 			return new WP_REST_Response( array( 'ok' => false ), 429 );
 		}
 		$url = esc_url_raw( (string) $request->get_param( 'url' ) );
-		if ( '' !== $url && in_array( wp_parse_url( $url, PHP_URL_SCHEME ), array( 'http', 'https' ), true ) ) {
+		// Only an indexed URL of this site is accepted. Recording an arbitrary URL
+		// let anyone write into the analytics of whichever visitor shares their
+		// address hash, so the click data could be filled with URLs the bot never
+		// suggested.
+		if ( '' !== $url
+			&& in_array( wp_parse_url( $url, PHP_URL_SCHEME ), array( 'http', 'https' ), true )
+			&& Ks_Concierge_Cache::url_is_indexed( $url ) ) {
 			Ks_Concierge_Analytics::record_click( $url, Ks_Concierge_Security::session_hash() );
 		}
 		return new WP_REST_Response( array( 'ok' => true ), 200 );

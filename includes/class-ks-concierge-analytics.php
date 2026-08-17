@@ -22,6 +22,80 @@ class Ks_Concierge_Analytics {
 	 */
 	public function register() {
 		add_action( 'admin_post_ks_concierge_export_logs', array( $this, 'handle_export' ) );
+		add_action( 'admin_post_ks_concierge_delete_log', array( $this, 'handle_delete' ) );
+		add_action( 'admin_post_ks_concierge_clear_logs', array( $this, 'handle_clear' ) );
+	}
+
+	/**
+	 * Delete a single conversation log row.
+	 *
+	 * @return void
+	 */
+	public function handle_delete() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to do this.', 'kashiwazaki-seo-concierge' ) );
+		}
+		check_admin_referer( 'ks_concierge_delete_log' );
+		global $wpdb;
+		$table   = $wpdb->prefix . 'ks_concierge_logs';
+		$log_id  = isset( $_POST['log_id'] ) ? absint( wp_unslash( $_POST['log_id'] ) ) : 0;
+		$deleted = 0;
+		if ( $log_id > 0 ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$deleted = (int) $wpdb->delete( $table, array( 'id' => $log_id ), array( '%d' ) );
+		}
+		self::redirect_back( 'deleted', $deleted );
+	}
+
+	/**
+	 * Delete every conversation log row in the bucket the admin is viewing, so
+	 * "clear" removes exactly the rows shown by the current filter.
+	 *
+	 * @return void
+	 */
+	public function handle_clear() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to do this.', 'kashiwazaki-seo-concierge' ) );
+		}
+		check_admin_referer( 'ks_concierge_clear_logs' );
+		$scope = isset( $_POST['log_scope'] ) ? sanitize_key( wp_unslash( $_POST['log_scope'] ) ) : 'all';
+		if ( ! in_array( $scope, array( 'all', 'visitor', 'admin' ), true ) ) {
+			$scope = 'all';
+		}
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_logs';
+		$cond  = self::scope_sql( $scope );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$deleted = (int) $wpdb->query( "DELETE FROM {$table} WHERE 1=1{$cond}" );
+		self::redirect_back( 'cleared', $deleted );
+	}
+
+	/**
+	 * Return to the analytics tab with a result notice, keeping the filter the
+	 * admin was on. Always lands on page 1 because the deletion reflows paging.
+	 *
+	 * @param string $notice  Notice key (deleted|cleared).
+	 * @param int    $deleted Rows removed.
+	 * @return void
+	 */
+	protected static function redirect_back( $notice, $deleted ) {
+		$scope = isset( $_POST['log_scope'] ) ? sanitize_key( wp_unslash( $_POST['log_scope'] ) ) : 'all';
+		if ( ! in_array( $scope, array( 'all', 'visitor', 'admin' ), true ) ) {
+			$scope = 'all';
+		}
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'       => 'kashiwazaki-seo-concierge',
+					'tab'        => 'analytics',
+					'log_scope'  => $scope,
+					'ks_notice'  => $notice,
+					'ks_deleted' => (int) $deleted,
+				),
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
 	}
 
 	/**
@@ -94,7 +168,7 @@ class Ks_Concierge_Analytics {
 		$table = $wpdb->prefix . 'ks_concierge_logs';
 		$cond  = self::scope_sql( $scope );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		return $wpdb->get_results( $wpdb->prepare( "SELECT created_at, question, answer, matched_urls, clicked_url, top_score, answered, is_admin, lang, ip, user_agent FROM {$table} WHERE 1=1{$cond} ORDER BY id DESC LIMIT %d OFFSET %d", (int) $limit, max( 0, (int) $offset ) ) );
+		return $wpdb->get_results( $wpdb->prepare( "SELECT id, created_at, question, answer, matched_urls, clicked_url, top_score, answered, is_admin, lang, ip, user_agent FROM {$table} WHERE 1=1{$cond} ORDER BY id DESC LIMIT %d OFFSET %d", (int) $limit, max( 0, (int) $offset ) ) );
 	}
 
 	/**

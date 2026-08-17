@@ -113,7 +113,8 @@ class Ks_Concierge_Frontend {
 					'thinking'    => __( '考えています…', 'kashiwazaki-seo-concierge' ),
 					'close'       => __( '閉じる', 'kashiwazaki-seo-concierge' ),
 					'error'       => __( '通信エラーが発生しました。時間をおいて再度お試しください。', 'kashiwazaki-seo-concierge' ),
-					'consentText' => __( '質問はAI（OpenAI）に送信されます。同意して続行しますか？', 'kashiwazaki-seo-concierge' ),
+					/* translators: %s: name(s) of the AI service the question is sent to. */
+					'consentText' => sprintf( __( '質問はAI（%s）に送信されます。同意して続行しますか？', 'kashiwazaki-seo-concierge' ), Ks_Concierge_Settings::recipient_label() ),
 				),
 			)
 		);

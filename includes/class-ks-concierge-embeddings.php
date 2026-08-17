@@ -249,15 +249,24 @@ class Ks_Concierge_Embeddings {
 				$dot += $query_vector[ $i ] * $vec[ $i ];
 			}
 			$scored[] = array(
-				'page_id' => $row['page_id'],
-				'score'   => $dot,
+				'page_id'  => $row['page_id'],
+				'score'    => $dot,
+				'priority' => isset( $row['priority'] ) ? (int) $row['priority'] : 0,
 			);
 		}
+		// Priority decides ties only. The settings screen presents it as "pages to
+		// surface first", so it has to affect ordering — but adding it to the
+		// cosine score would let an administrator's list outrank a genuinely
+		// closer match and quietly degrade every answer. Breaking ties keeps the
+		// promise without distorting relevance.
 		usort(
 			$scored,
 			static function ( $a, $b ) {
 				if ( $a['score'] === $b['score'] ) {
-					return 0;
+					if ( $a['priority'] === $b['priority'] ) {
+						return 0;
+					}
+					return ( $a['priority'] < $b['priority'] ) ? 1 : -1;
 				}
 				return ( $a['score'] < $b['score'] ) ? 1 : -1;
 			}
@@ -291,8 +300,36 @@ class Ks_Concierge_Embeddings {
 		// results do not stick for a full day.
 		$ttl = self::reindex_active() ? MINUTE_IN_SECONDS : DAY_IN_SECONDS;
 		wp_cache_set( $key, $data, self::CACHE_GROUP, self::reindex_active() ? MINUTE_IN_SECONDS : HOUR_IN_SECONDS );
-		set_transient( 'ks_concierge_' . $key, $data, $ttl );
+		// Without a persistent object cache a transient is a single wp_options
+		// row, and the whole matrix is far too large for that: a site with a few
+		// hundred pages produces megabytes, which MySQL silently refuses when it
+		// exceeds max_allowed_packet. The write appears to succeed, the read then
+		// misses, and every question rebuilds the matrix from the database. Skip
+		// the transient in that case and rely on the request-scoped cache.
+		if ( wp_using_ext_object_cache() || self::matrix_fits_transient( $data ) ) {
+			set_transient( 'ks_concierge_' . $key, $data, $ttl );
+		}
 		return $data;
+	}
+
+	/**
+	 * Whether the serialized matrix is small enough to store in one option row.
+	 *
+	 * Conservative ceiling: MySQL's default max_allowed_packet is 4MB and the
+	 * value has to round-trip through a single INSERT, so anything approaching
+	 * that is refused rather than written and lost.
+	 *
+	 * @param array $data Matrix rows.
+	 * @return bool
+	 */
+	protected static function matrix_fits_transient( array $data ) {
+		if ( empty( $data ) ) {
+			return true;
+		}
+		$limit = (int) apply_filters( 'ks_concierge_matrix_transient_max_bytes', 1048576 );
+		// Estimate from one row rather than serializing the whole matrix twice.
+		$sample = strlen( (string) maybe_serialize( reset( $data ) ) );
+		return ( $sample * count( $data ) ) <= $limit;
 	}
 
 	/**
@@ -315,7 +352,7 @@ class Ks_Concierge_Embeddings {
 			// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			$rows = $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT e.page_id AS page_id, p.lang AS lang, e.vector AS vector
+					"SELECT e.page_id AS page_id, p.lang AS lang, p.priority AS priority, e.vector AS vector
 					 FROM {$emb} e
 					 INNER JOIN {$pages} p ON p.id = e.page_id
 					 WHERE p.status = 'active' AND e.embed_sig = %s
@@ -337,9 +374,10 @@ class Ks_Concierge_Embeddings {
 					continue;
 				}
 				$out[] = array(
-					'page_id' => (int) $row['page_id'],
-					'lang'    => (string) $row['lang'],
-					'vector'  => $vec,
+					'page_id'  => (int) $row['page_id'],
+					'lang'     => (string) $row['lang'],
+					'priority' => (int) $row['priority'],
+					'vector'   => $vec,
 				);
 			}
 			if ( count( $rows ) < $batch ) {

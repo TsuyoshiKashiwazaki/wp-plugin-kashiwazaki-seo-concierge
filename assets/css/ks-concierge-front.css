@@ -264,10 +264,42 @@
 	font-size: 13px;
 	color: #888;
 	font-style: italic;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+/* Spinner shown while the answer is being generated. A first-time question
+   takes a few seconds (the question is embedded, then an answer is written),
+   and a caption alone reads as a frozen screen for that whole time. */
+.ks-concierge__spinner {
+	width: 14px;
+	height: 14px;
+	flex: none;
+	border-radius: 50%;
+	border: 2px solid rgba(0, 0, 0, .12);
+	border-top-color: var(--ks-accent, #1e73be);
+	animation: ks-concierge-spin .7s linear infinite;
+}
+
+@keyframes ks-concierge-spin {
+	to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.ks-concierge * {
+	/* Rotation is disabled, but the indicator still has to show that something
+	   is happening, so it fades instead. */
+	.ks-concierge__spinner {
+		animation: ks-concierge-pulse 1.4s ease-in-out infinite !important;
+		border-top-color: var(--ks-accent, #1e73be);
+	}
+
+	@keyframes ks-concierge-pulse {
+		0%, 100% { opacity: .3; }
+		50% { opacity: 1; }
+	}
+
+	.ks-concierge *:not(.ks-concierge__spinner) {
 		transition: none !important;
 		animation: none !important;
 	}

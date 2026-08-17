@@ -30,6 +30,8 @@ class Ks_Concierge_Cache {
 	const LINKCHECK_HOOK    = 'ks_concierge_check_links';
 	const LINKCHECK_LOCK    = 'ks_concierge_check_links_lock';
 	const LINKCHECK_RUN_KEY = 'ks_concierge_linkcheck_run';
+	const PRIORITY_HOOK      = 'ks_concierge_recalc_priorities';
+	const PRIORITY_STATE_KEY = 'ks_concierge_priority_state';
 	const REACH_FAIL_LIMIT  = 2;
 
 	/**
@@ -47,6 +49,7 @@ class Ks_Concierge_Cache {
 	public function register() {
 		add_action( self::CRON_HOOK, array( $this, 'run_reindex' ) );
 		add_action( self::LINKCHECK_HOOK, array( $this, 'run_link_check' ) );
+		add_action( self::PRIORITY_HOOK, array( $this, 'run_priority_recalc' ) );
 		add_action( 'admin_post_ks_concierge_reindex_now', array( $this, 'handle_manual_reindex' ) );
 		add_action( 'admin_post_ks_concierge_check_links_now', array( $this, 'handle_check_links_now' ) );
 		add_filter( 'cron_schedules', array( $this, 'add_schedules' ) );
@@ -303,6 +306,10 @@ class Ks_Concierge_Cache {
 						'lastmod'    => $lastmod,
 						'status'     => $new_status,
 						'priority'   => $this->priority_for( $url ),
+						// Recomputed like priority. Detection rules can change, and
+						// a row keeping a value from the old rules would stay
+						// filtered out of results that should include it.
+						'lang'       => self::detect_lang( $url ),
 						'updated_at' => current_time( 'mysql', true ),
 					),
 					array( 'id' => $existing->id )
@@ -313,6 +320,9 @@ class Ks_Concierge_Cache {
 					// query picks it up.
 					// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 					$wpdb->query( $wpdb->prepare( "UPDATE {$emb} SET content_hash = NULL WHERE page_id = %d", (int) $existing->id ) );
+					// Answers that recommended this page were written from its old
+					// title and summary, so they no longer describe it.
+					$this->purge_answer_cache_for_url( $url );
 				}
 				continue;
 			}
@@ -516,6 +526,99 @@ class Ks_Concierge_Cache {
 	}
 
 	/**
+	 * Re-apply the priority rules in batches, chaining until every page is done.
+	 *
+	 * A dedicated job rather than a piggyback on the reindex: the reindex only
+	 * recomputes priority as a side effect of discovery, which it skips entirely
+	 * when a drain session is already active. The setting would then appear to
+	 * have been saved while nothing changed.
+	 *
+	 * @return void
+	 */
+	public function run_priority_recalc() {
+		$state  = get_option( self::PRIORITY_STATE_KEY, array() );
+		$offset = ( is_array( $state ) && isset( $state['offset'] ) ) ? (int) $state['offset'] : 0;
+		$batch  = 500;
+
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT id, url, priority FROM {$table} ORDER BY id ASC LIMIT %d OFFSET %d", $batch, $offset ) );
+		if ( ! $rows ) {
+			delete_option( self::PRIORITY_STATE_KEY );
+			// Ordering and cached answers both depend on priority, so both are
+			// invalidated once — at the end, not per batch.
+			Ks_Concierge_Embeddings::flush_matrix_cache();
+			$this->flush_answer_cache();
+			return;
+		}
+		foreach ( $rows as $row ) {
+			$priority = $this->priority_for( (string) $row->url );
+			if ( (int) $row->priority === $priority ) {
+				continue;
+			}
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->update( $table, array( 'priority' => $priority ), array( 'id' => (int) $row->id ), array( '%d' ), array( '%d' ) );
+		}
+		update_option( self::PRIORITY_STATE_KEY, array( 'offset' => $offset + count( $rows ) ), false );
+		wp_schedule_single_event( time(), self::PRIORITY_HOOK );
+	}
+
+	/**
+	 * Count indexed pages.
+	 *
+	 * @return int
+	 */
+	public static function page_count() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+	}
+
+	/**
+	 * Re-apply the priority rules to every indexed page.
+	 *
+	 * Priority is otherwise only computed while a page is being indexed, so
+	 * editing the rules had no effect until each page happened to be reindexed —
+	 * the setting appeared to do nothing. Called when the rules change.
+	 *
+	 * @return int Rows whose priority changed.
+	 */
+	public function recalculate_priorities( $limit = 0 ) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		$limit = (int) $limit;
+		if ( $limit > 0 ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT id, url, priority FROM {$table} LIMIT %d", $limit ) );
+		} else {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$rows = $wpdb->get_results( "SELECT id, url, priority FROM {$table}" );
+		}
+		if ( ! $rows ) {
+			return 0;
+		}
+		$changed = 0;
+		foreach ( $rows as $row ) {
+			$priority = $this->priority_for( (string) $row->url );
+			if ( (int) $row->priority === $priority ) {
+				continue;
+			}
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->update( $table, array( 'priority' => $priority ), array( 'id' => (int) $row->id ), array( '%d' ), array( '%d' ) );
+			$changed++;
+		}
+		if ( $changed > 0 ) {
+			// The matrix carries priority for tie-breaking, and cached answers were
+			// produced under the old ordering.
+			Ks_Concierge_Embeddings::flush_matrix_cache();
+			$this->flush_answer_cache();
+		}
+		return $changed;
+	}
+
+	/**
 	 * Get a page row by URL.
 	 *
 	 * @param string $url URL.
@@ -553,7 +656,7 @@ class Ks_Concierge_Cache {
 			'source'       => $source,
 			'status'       => 'active',
 			'priority'     => $this->priority_for( $url ),
-			'lang'         => $this->detect_lang( $url ),
+			'lang'         => self::detect_lang( $url ),
 			'updated_at'   => current_time( 'mysql', true ),
 		);
 		$existing = $this->get_page_by_url( $url );
@@ -637,6 +740,39 @@ class Ks_Concierge_Cache {
 	}
 
 	/**
+	 * Whether a URL exists in the page index.
+	 *
+	 * Used to validate click reports: only a URL this plugin actually indexed —
+	 * and therefore could have recommended — may be recorded.
+	 *
+	 * @param string $url URL.
+	 * @return bool
+	 */
+	public static function url_is_indexed( $url ) {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return (bool) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE url = %s LIMIT 1", (string) $url ) );
+	}
+
+	/**
+	 * Drop every cached answer.
+	 *
+	 * Used when a setting changes that affects how answers are produced or
+	 * ordered: the stored answers were generated under the old configuration and
+	 * would otherwise keep being served for up to a day, making the change look
+	 * like it had no effect.
+	 *
+	 * @return void
+	 */
+	public function flush_answer_cache() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_cache';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( "DELETE FROM {$table}" );
+	}
+
+	/**
 	 * Delete cached answers (wp_ks_concierge_cache) whose stored answer JSON
 	 * references the given URL. Matches the JSON-escaped form of the URL (forward
 	 * slashes are stored as "\/") so the LIKE hits the real bytes in the column.
@@ -677,13 +813,19 @@ class Ks_Concierge_Cache {
 			'user-agent'  => 'KashiwazakiSEOConcierge/' . ( defined( 'KS_CONCIERGE_VERSION' ) ? KS_CONCIERGE_VERSION : '1.0' ) . '; ' . home_url( '/' ),
 		);
 
-		$resp = wp_remote_head( $url, $args );
+		// wp_safe_remote_* (not the plain variants): indexed URLs can originate
+		// from an external llms.txt, and this probe follows redirects. Without
+		// the safe wrappers a crafted entry — or a redirect to one — would make
+		// the site report whether an internal address answers.
+		$args['reject_unsafe_urls'] = true;
+
+		$resp = wp_safe_remote_head( $url, $args );
 		$code = is_wp_error( $resp ) ? 0 : (int) wp_remote_retrieve_response_code( $resp );
 
 		// HEAD unsupported or inconclusive: retry once with a tiny ranged GET.
 		if ( 0 === $code || 405 === $code || 501 === $code ) {
 			$args['headers'] = array( 'Range' => 'bytes=0-0' );
-			$resp            = wp_remote_get( $url, $args );
+			$resp            = wp_safe_remote_get( $url, $args );
 			$code            = is_wp_error( $resp ) ? 0 : (int) wp_remote_retrieve_response_code( $resp );
 		}
 
@@ -772,12 +914,46 @@ class Ks_Concierge_Cache {
 	 * @param string $url URL.
 	 * @return string
 	 */
-	protected function detect_lang( $url ) {
+	public static function detect_lang( $url ) {
 		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
-		if ( preg_match( '#/([a-z]{2})(/|$)#', $path, $m ) ) {
-			return $m[1];
+		// Only the first path segment, and only when it is a real language
+		// subtag. Matching any two letters anywhere made /ai/, /it/, /qa/ and
+		// /pr/ read as languages, and search then filtered those pages out of
+		// every answer whose question was detected as another language.
+		if ( ! preg_match( '#^/([a-z]{2})(?:-[a-z]{2})?(/|$)#i', $path, $m ) ) {
+			return '';
 		}
-		return '';
+		$code = strtolower( $m[1] );
+		return in_array( $code, self::language_subtags(), true ) ? $code : '';
+	}
+
+	/**
+	 * ISO 639-1 subtags accepted as a language path segment.
+	 *
+	 * @return string[]
+	 */
+	protected static function language_subtags() {
+		// Deliberately conservative. A wrong hit is harmful — the page is filtered
+		// out of results for questions detected as another language — while a miss
+		// is harmless, since an empty value simply skips language filtering. Codes
+		// that double as common English path segments ('it', 'id', 'no', 'fa',
+		// 'ta') are therefore left out by default: on a Japanese site /it/ is far
+		// more likely to be the IT category than Italian. Sites that really serve
+		// those languages can add them through the filter.
+		$codes = array(
+			'ja', 'en', 'zh', 'ko', 'fr', 'de', 'es', 'pt', 'ru', 'ar', 'hi',
+			'th', 'vi', 'ms', 'nl', 'pl', 'tr', 'sv', 'da', 'fi', 'cs',
+			'el', 'he', 'hu', 'ro', 'uk', 'bn',
+		);
+		/**
+		 * Filter the language subtags recognised in a URL path.
+		 *
+		 * Add codes such as 'it' or 'id' here when the site actually serves those
+		 * languages from a matching directory.
+		 *
+		 * @param string[] $codes ISO 639-1 codes.
+		 */
+		return (array) apply_filters( 'ks_concierge_language_subtags', $codes );
 	}
 
 	/**

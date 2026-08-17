@@ -16,6 +16,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Ks_Concierge_Security {
 
 	/**
+	 * Object-cache group for rate-limit counters.
+	 */
+	const RATE_CACHE_GROUP = 'ks_concierge_rl';
+
+	/**
 	 * Sanitize a visitor question.
 	 *
 	 * @param string $question Raw input.
@@ -324,12 +329,202 @@ class Ks_Concierge_Security {
 		if ( $limit <= 0 || $window <= 0 ) {
 			return true;
 		}
-		$key   = 'ks_concierge_rl_' . self::ip_hash();
-		$count = (int) get_transient( $key );
-		if ( $count >= $limit ) {
-			return false;
+		$key = 'ks_concierge_rl_' . self::ip_hash();
+
+		// A persistent object cache offers an atomic increment; use it.
+		if ( wp_using_ext_object_cache() ) {
+			$count = wp_cache_incr( $key, 1, self::RATE_CACHE_GROUP );
+			if ( false === $count ) {
+				// No counter yet. wp_cache_add() is "create only if absent", so
+				// exactly one concurrent request wins it and the rest must
+				// increment the winner's value rather than assume 1 — otherwise an
+				// opening burst all passes at once, which is the case the limit
+				// exists for.
+				if ( wp_cache_add( $key, 1, self::RATE_CACHE_GROUP, $window ) ) {
+					$count = 1;
+				} else {
+					$count = wp_cache_incr( $key, 1, self::RATE_CACHE_GROUP );
+					if ( false === $count ) {
+						// Neither incr nor add worked: the backing store is not
+						// answering (a dropped memcached connection behaves this
+						// way). Denying everyone would take the site's chat down
+						// over a cache outage, so fall through to the database
+						// counter, which is authoritative and equally atomic.
+						return self::increment_option_counter( $key, $limit, $window );
+					}
+				}
+			}
+			return ( (int) $count <= $limit );
 		}
-		set_transient( $key, $count + 1, $window );
-		return true;
+
+		// No object cache: transients live in the options table, so the counter is
+		// incremented with a single atomic UPSERT instead of read-then-write. The
+		// read-then-write version let every request in a simultaneous burst read
+		// the same value and pass together.
+		return self::increment_option_counter( $key, $limit, $window );
+	}
+
+	/**
+	 * Atomically increment a windowed counter stored as a transient, returning
+	 * whether the caller is still within the limit.
+	 *
+	 * Writes the transient's own option rows directly: `INSERT ... ON DUPLICATE
+	 * KEY UPDATE` is one statement, so concurrent requests serialize inside MySQL
+	 * and each receives a distinct count. Only reached when no persistent object
+	 * cache is installed, which is exactly when transients are option rows.
+	 *
+	 * @param string $key    Transient key (without the _transient_ prefix).
+	 * @param int    $limit  Maximum allowed within the window.
+	 * @param int    $window Window length in seconds.
+	 * @return bool
+	 */
+	/**
+	 * Delete expired rate-limit rows written by the database counter.
+	 *
+	 * WordPress skips its own expired-transient sweep entirely when a persistent
+	 * object cache is installed (wp-includes/option.php: `if ( ! $force_db &&
+	 * wp_using_ext_object_cache() ) return;`). The database path is exactly what
+	 * runs when that cache is unavailable, so those rows would be left behind on
+	 * such a site. Called from the plugin's daily maintenance job.
+	 *
+	 * @return int Rows removed.
+	 */
+	public static function purge_expired_rate_limits() {
+		global $wpdb;
+		$now = time();
+		// Both rows go in ONE statement, keyed on the timeout row being expired.
+		// Deleting them separately let a request roll the window over between the
+		// two deletes, after which the second delete removed a counter that had
+		// just become live again. The composite value is never parsed here, so a
+		// malformed one cannot abort the statement under strict mode. The REGEXP
+		// guard on the timeout value covers the same hazard for these deletes: an
+		// externally corrupted row would otherwise abort the daily sweep.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$removed = (int) $wpdb->query(
+			$wpdb->prepare(
+				"DELETE v, t FROM {$wpdb->options} v
+				 INNER JOIN {$wpdb->options} t
+					 ON t.option_name = CONCAT( '_transient_timeout_', SUBSTRING( v.option_name, 12 ) )
+				 WHERE v.option_name LIKE %s
+				   AND t.option_value REGEXP '^[0-9]+$'
+				   AND CAST( t.option_value AS UNSIGNED ) < %d",
+				$wpdb->esc_like( '_transient_ks_concierge_rl_' ) . '%',
+				(int) $now
+			)
+		);
+		// Counter rows whose timeout row is gone. This direction cannot arise from
+		// this class any more (the timeout row is always written first), but core's
+		// own transient sweep can delete a timeout row on its own, and without this
+		// the counter would never be collected. Age is read from the value's own
+		// embedded expiry, guarded so a malformed row is skipped rather than
+		// aborting the statement.
+		$removed += (int) $wpdb->query(
+			$wpdb->prepare(
+				"DELETE v FROM {$wpdb->options} v
+				 LEFT JOIN {$wpdb->options} t
+					 ON t.option_name = CONCAT( '_transient_timeout_', SUBSTRING( v.option_name, 12 ) )
+				 WHERE v.option_name LIKE %s
+				   AND t.option_name IS NULL
+				   AND SUBSTRING_INDEX( v.option_value, '|', 1 ) REGEXP '^[0-9]+$'
+				   AND CAST( SUBSTRING_INDEX( v.option_value, '|', 1 ) AS UNSIGNED ) < %d",
+				$wpdb->esc_like( '_transient_ks_concierge_rl_' ) . '%',
+				(int) $now
+			)
+		);
+		// Timeout rows whose counter is already gone (an interrupted write, or a
+		// row removed by other means). Harmless but pointless to keep.
+		$removed += (int) $wpdb->query(
+			$wpdb->prepare(
+				"DELETE t FROM {$wpdb->options} t
+				 LEFT JOIN {$wpdb->options} v
+					 ON v.option_name = CONCAT( '_transient_', SUBSTRING( t.option_name, 20 ) )
+				 WHERE t.option_name LIKE %s
+				   AND t.option_value REGEXP '^[0-9]+$'
+				   AND CAST( t.option_value AS UNSIGNED ) < %d
+				   AND v.option_name IS NULL",
+				$wpdb->esc_like( '_transient_timeout_ks_concierge_rl_' ) . '%',
+				(int) $now
+			)
+		);
+		// phpcs:enable
+		if ( $removed > 0 && function_exists( 'wp_cache_flush_group' ) ) {
+			// Added in WordPress 6.1; this plugin supports 6.0, where the deleted
+			// rows simply age out of the options cache on the next request.
+			wp_cache_flush_group( 'options' );
+		}
+		return $removed;
+	}
+
+	protected static function increment_option_counter( $key, $limit, $window ) {
+		global $wpdb;
+		$value_option   = '_transient_' . $key;
+		$timeout_option = '_transient_timeout_' . $key;
+
+		// Ordering matters more than any single statement here. The companion
+		// timeout row is refreshed BEFORE the counter row, because the cleanup
+		// sweep decides what to delete by looking at that timeout: refreshing it
+		// first means a sweep running alongside this request always sees a live
+		// window and leaves both rows alone. Doing it the other way round let the
+		// sweep delete a counter that had just been rolled over, which reset the
+		// count and allowed a burst straight through.
+		//
+		// Two attempts: if a sweep removed the rows in the instant between the
+		// INSERTs and the UPDATE, the UPDATE matches nothing and the request would
+		// otherwise be judged on a count that was never assigned.
+		for ( $attempt = 0; $attempt < 2; $attempt++ ) {
+			$now     = time();
+			$expires = $now + $window;
+
+			// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $timeout_option, (string) $expires ) );
+			$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", $value_option, $expires . '|0' ) );
+
+			// Advance-only: a request holding an older expiry can never push the
+			// window back into the past and make the sweep drop a live counter.
+			$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND ( option_value NOT REGEXP '^[0-9]+$' OR CAST( option_value AS UNSIGNED ) < %d )", (string) $expires, $timeout_option, (int) $expires ) );
+
+			// One statement decides the window and this request's number. The
+			// first branch also repairs a value that is not "digits|digits":
+			// applying CAST() to such a string raises a truncation warning that a
+			// server in strict mode turns into an error, aborting the statement
+			// and disabling rate limiting entirely.
+			$rows = (int) $wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$wpdb->options}
+					 SET option_value = CASE
+						 WHEN SUBSTRING_INDEX( option_value, '|', 1 ) NOT REGEXP '^[0-9]+$'
+							 OR SUBSTRING_INDEX( option_value, '|', -1 ) NOT REGEXP '^[0-9]+$'
+							 THEN CONCAT( %d, '|', LAST_INSERT_ID( 1 ) )
+						 WHEN CAST( SUBSTRING_INDEX( option_value, '|', 1 ) AS UNSIGNED ) <= %d
+							 THEN CONCAT( %d, '|', LAST_INSERT_ID( 1 ) )
+						 ELSE CONCAT(
+							 SUBSTRING_INDEX( option_value, '|', 1 ), '|',
+							 LAST_INSERT_ID( CAST( SUBSTRING_INDEX( option_value, '|', -1 ) AS UNSIGNED ) + 1 )
+						 )
+					 END
+					 WHERE option_name = %s",
+					$expires,
+					$now,
+					$expires,
+					$value_option
+				)
+			);
+			// phpcs:enable
+
+			if ( $rows > 0 ) {
+				// LAST_INSERT_ID() is per connection, so this is the number this
+				// request was assigned — not whatever the row holds by now.
+				$count = (int) $wpdb->get_var( 'SELECT LAST_INSERT_ID()' );
+				wp_cache_delete( $value_option, 'options' );
+				wp_cache_delete( $timeout_option, 'options' );
+				return ( $count >= 1 && $count <= $limit );
+			}
+		}
+
+		wp_cache_delete( $value_option, 'options' );
+		wp_cache_delete( $timeout_option, 'options' );
+		// Two attempts and still no row: something is wrong with the counter, and
+		// letting the request through would mean no limit at all.
+		return false;
 	}
 }

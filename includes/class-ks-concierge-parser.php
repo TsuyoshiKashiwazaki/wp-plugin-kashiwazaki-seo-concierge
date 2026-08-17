@@ -115,7 +115,12 @@ class Ks_Concierge_Parser {
 				$title = trim( $m[1] );
 				$loc   = esc_url_raw( trim( $m[2] ) );
 				$desc  = trim( $m[3] );
-				if ( '' === $loc ) {
+				// The file is fetched from a URL the administrator configured, but
+				// its contents are not under this site's control. Every listed URL
+				// is later probed by the reachability check, so an entry pointing
+				// at a loopback or private address would turn that check into an
+				// internal port scanner. Same gate as the file fetch itself.
+				if ( '' === $loc || ! $this->is_safe_url( $loc ) ) {
 					continue;
 				}
 				$summary = $desc;

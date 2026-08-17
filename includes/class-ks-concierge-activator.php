@@ -66,9 +66,87 @@ class Ks_Concierge_Activator {
 		try {
 			self::run_ddl();
 			self::backfill_v2();
+			self::migrate_api_keys();
+			self::migrate_page_languages();
 			update_option( 'ks_concierge_dbversion', KS_CONCIERGE_DB_VERSION, false );
 		} finally {
 			delete_transient( 'ks_concierge_migrating' );
+		}
+	}
+
+	/**
+	 * Re-derive the language of every indexed page (v7).
+	 *
+	 * Detection previously treated any two-letter path segment as a language, so
+	 * rows can hold values like 'ai' or 'qa' that the current rules reject. Those
+	 * stale values still filter pages out of results, and nothing would refresh
+	 * them until each page happened to be rediscovered.
+	 *
+	 * @return void
+	 */
+	protected static function migrate_page_languages() {
+		global $wpdb;
+		$table = $wpdb->prefix . 'ks_concierge_pages';
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results( "SELECT id, url, lang FROM {$table} WHERE lang <> ''" );
+		if ( ! $rows ) {
+			return;
+		}
+		$changed = false;
+		foreach ( $rows as $row ) {
+			$lang = (string) Ks_Concierge_Cache::detect_lang( (string) $row->url );
+			if ( $lang === (string) $row->lang ) {
+				continue;
+			}
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->update( $table, array( 'lang' => $lang ), array( 'id' => (int) $row->id ), array( '%s' ), array( '%d' ) );
+			$changed = true;
+		}
+		if ( $changed ) {
+			Ks_Concierge_Embeddings::flush_matrix_cache();
+		}
+	}
+
+	/**
+	 * Move each role's single stored API key into the per-provider map (v6).
+	 *
+	 * Earlier versions kept one key per role regardless of the selected provider,
+	 * so changing the provider left the previous provider's key in place and every
+	 * call failed with 401 — visible only as the visitor-facing fallback. The key
+	 * on file belongs to the provider recorded right now, before any later switch,
+	 * which is why the attribution has to happen here and once. The old field is
+	 * then emptied so it can never be re-attributed to a different provider.
+	 *
+	 * @return void
+	 */
+	protected static function migrate_api_keys() {
+		$stored = get_option( Ks_Concierge_Settings::OPTION_KEY, array() );
+		if ( ! is_array( $stored ) ) {
+			return;
+		}
+		$changed = false;
+		foreach ( array( 'embed', 'chat' ) as $role ) {
+			$legacy_field = $role . '_api_key_cipher';
+			$legacy       = isset( $stored[ $legacy_field ] ) ? (string) $stored[ $legacy_field ] : '';
+			if ( '' === $legacy ) {
+				continue;
+			}
+			$map_field = $role . '_api_key_ciphers';
+			$map       = ( isset( $stored[ $map_field ] ) && is_array( $stored[ $map_field ] ) ) ? $stored[ $map_field ] : array();
+			$provider  = isset( $stored[ $role . '_provider' ] ) ? (string) $stored[ $role . '_provider' ] : 'openai';
+			if ( ! in_array( $provider, Ks_Concierge_Settings::PROVIDERS, true ) ) {
+				$provider = 'openai';
+			}
+			if ( empty( $map[ $provider ] ) ) {
+				$map[ $provider ] = $legacy;
+			}
+			$stored[ $map_field ]    = $map;
+			$stored[ $legacy_field ] = '';
+			$changed                 = true;
+		}
+		if ( $changed ) {
+			update_option( Ks_Concierge_Settings::OPTION_KEY, $stored, false );
+			Ks_Concierge_Settings::flush_cache();
 		}
 	}
 

@@ -22,6 +22,11 @@ class Ks_Concierge_OpenAI {
 	const API_BASE = 'https://api.openai.com/v1';
 
 	/**
+	 * Option holding the last failure per role (embed|chat).
+	 */
+	const ERROR_OPTION = 'ks_concierge_last_error';
+
+	/**
 	 * Approximate per-1K-token pricing in USD (input/output) for estimation.
 	 *
 	 * @var array<string,array{in:float,out:float}>
@@ -86,7 +91,11 @@ class Ks_Concierge_OpenAI {
 	protected static function price_for( $role, $model ) {
 		$provider = Ks_Concierge_Settings::get_provider( $role );
 
-		if ( Ks_Concierge_Settings::is_local_free( $role ) ) {
+		// Local endpoints cost nothing; flat-rate subscriptions cost the same
+		// whatever the volume, so neither accrues estimated USD. Charging them
+		// the unknown-model rate below would build a fictional bill and trip the
+		// USD cap on spend that never happened.
+		if ( Ks_Concierge_Settings::is_local_free( $role ) || Ks_Concierge_Settings::is_flat_rate( $role ) ) {
 			return array(
 				'in'   => 0.0,
 				'out'  => 0.0,
@@ -155,6 +164,47 @@ class Ks_Concierge_OpenAI {
 	}
 
 	/**
+	 * Why a role cannot answer right now, or null when it can.
+	 *
+	 * Callers that skip the request entirely (no key, cap reached) must go
+	 * through this so the reason is recorded like any other failure. Returning
+	 * the visitor-facing fallback without recording leaves the administrator
+	 * with no signal at all — the screen keeps saying everything is fine while
+	 * every answer is a canned notice.
+	 *
+	 * @param string $role embed|chat.
+	 * @return WP_Error|null
+	 */
+	public static function availability_error( $role ) {
+		if ( ! Ks_Concierge_Settings::has_key( $role ) ) {
+			$error = new WP_Error( 'ks_concierge_no_key', __( 'AI API key is not configured.', 'kashiwazaki-seo-concierge' ) );
+		} elseif ( self::is_breaker_open( $role ) ) {
+			$error = new WP_Error( 'ks_concierge_cost_limit', __( 'AI spending limit reached; requests are blocked until the limit resets or is raised.', 'kashiwazaki-seo-concierge' ) );
+		} else {
+			return null;
+		}
+		self::record_error( $role, $error );
+		return $error;
+	}
+
+	/**
+	 * Record a failure produced outside request(), then hand it back unchanged
+	 * so callers can `return self::fail( ... )`.
+	 *
+	 * request() only sees transport-level outcomes. A 2xx response that is then
+	 * refused, empty or unparseable is just as much a failure for the visitor,
+	 * and without this it would clear the previous error and record nothing.
+	 *
+	 * @param string   $role  embed|chat.
+	 * @param WP_Error $error Failure.
+	 * @return WP_Error
+	 */
+	protected static function fail( $role, $error ) {
+		self::record_error( $role, $error );
+		return $error;
+	}
+
+	/**
 	 * Whether the cost circuit breaker is currently tripped for a role.
 	 *
 	 * Two gates: (1) the shared USD total cap (embed + chat) preserves the
@@ -180,9 +230,11 @@ class Ks_Concierge_OpenAI {
 			return true;
 		}
 
-		// Token backstop: only for paid providers with an unresolvable price.
+		// Token backstop: for paid providers whose price cannot be resolved, and
+		// for flat-rate subscriptions, where the USD cap can never fire and the
+		// token cap is therefore the only bound on a runaway loop.
 		$model = (string) Ks_Concierge_Settings::get( 'embed' === $role ? 'embeddings_model' : 'chat_model', '' );
-		if ( null === self::price_for( $role, $model ) ) {
+		if ( null === self::price_for( $role, $model ) || Ks_Concierge_Settings::is_flat_rate( $role ) ) {
 			$t_daily   = (int) Ks_Concierge_Settings::get( 'token_limit_daily', 0 );
 			$t_monthly = (int) Ks_Concierge_Settings::get( 'token_limit_monthly', 0 );
 			if ( $t_daily > 0 && self::usage_tokens( $role, gmdate( 'Y-m-d' ) ) >= $t_daily ) {
@@ -274,6 +326,20 @@ class Ks_Concierge_OpenAI {
 			? (int) $response['usage']['prompt_tokens']
 			: ( isset( $response['usage']['total_tokens'] ) ? (int) $response['usage']['total_tokens'] : 0 );
 		self::record_usage( 'embed', $model, $prompt, 0, true );
+		if ( count( $vectors ) < count( $inputs ) ) {
+			// A 2xx response that carries no usable vectors is still a failure for
+			// the caller. Without this the transport-level success would clear the
+			// previous error and nothing would be recorded, leaving search quietly
+			// broken with a clean settings screen.
+			return self::fail(
+				'embed',
+				new WP_Error(
+					'ks_concierge_embed_empty',
+					__( 'The embedding service returned no usable vectors.', 'kashiwazaki-seo-concierge' )
+				)
+			);
+		}
+		self::clear_error( 'embed' );
 		return array( 'vectors' => $vectors );
 	}
 
@@ -323,14 +389,57 @@ class Ks_Concierge_OpenAI {
 		self::record_usage( 'chat', $model, $prompt, $completion, true );
 
 		if ( ! empty( $response['choices'][0]['message']['refusal'] ) ) {
-			return new WP_Error( 'ks_concierge_refusal', __( 'The model declined to answer.', 'kashiwazaki-seo-concierge' ) );
+			return self::fail( 'chat', new WP_Error( 'ks_concierge_refusal', __( 'The model declined to answer.', 'kashiwazaki-seo-concierge' ) ) );
 		}
 		$content = isset( $response['choices'][0]['message']['content'] ) ? $response['choices'][0]['message']['content'] : '';
 		$parsed  = self::decode_json_lenient( (string) $content );
 		if ( ! is_array( $parsed ) ) {
-			return new WP_Error( 'ks_concierge_parse', __( 'Could not parse the AI response.', 'kashiwazaki-seo-concierge' ) );
+			return self::fail( 'chat', new WP_Error( 'ks_concierge_parse', __( 'Could not parse the AI response.', 'kashiwazaki-seo-concierge' ) ) );
 		}
+		self::clear_error( 'chat' );
 		return $parsed;
+	}
+
+	/**
+	 * Call Chat Completions for a plain-text reply, with no structured output.
+	 *
+	 * For prose-only replies (the small-talk concierge message) a JSON envelope
+	 * buys nothing and costs reliability: providers that ignore response_format —
+	 * Ollama and other OpenAI-compatible endpoints do — answer in prose anyway,
+	 * which then fails JSON parsing and degrades to the canned fallback. Asking
+	 * for prose directly works on every provider.
+	 *
+	 * @param array $messages Chat messages.
+	 * @return string|WP_Error Reply text, or WP_Error.
+	 */
+	public static function chat_text( array $messages ) {
+		$model    = (string) Ks_Concierge_Settings::get( 'chat_model', 'gpt-4o-mini' );
+		$response = self::request(
+			'/chat/completions',
+			array(
+				'model'    => $model,
+				'messages' => $messages,
+			),
+			'chat'
+		);
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+		$prompt     = isset( $response['usage']['prompt_tokens'] ) ? (int) $response['usage']['prompt_tokens'] : 0;
+		$completion = isset( $response['usage']['completion_tokens'] ) ? (int) $response['usage']['completion_tokens'] : 0;
+		self::record_usage( 'chat', $model, $prompt, $completion, true );
+
+		if ( ! empty( $response['choices'][0]['message']['refusal'] ) ) {
+			return self::fail( 'chat', new WP_Error( 'ks_concierge_refusal', __( 'The model declined to answer.', 'kashiwazaki-seo-concierge' ) ) );
+		}
+		$content = isset( $response['choices'][0]['message']['content'] ) ? trim( (string) $response['choices'][0]['message']['content'] ) : '';
+		if ( '' === $content ) {
+			// Reasoning models can spend the whole response on internal reasoning
+			// and return empty content; treat that as unavailable.
+			return self::fail( 'chat', new WP_Error( 'ks_concierge_empty', __( 'The AI returned an empty response.', 'kashiwazaki-seo-concierge' ) ) );
+		}
+		self::clear_error( 'chat' );
+		return $content;
 	}
 
 	/**
@@ -367,6 +476,96 @@ class Ks_Concierge_OpenAI {
 	 * @return array|WP_Error Decoded JSON array on success.
 	 */
 	protected static function request( $endpoint, array $body, $role ) {
+		$result = self::send( $endpoint, $body, $role );
+		if ( is_wp_error( $result ) ) {
+			self::record_error( $role, $result );
+		}
+		// Deliberately does NOT clear on a 2xx: the response can still turn out to
+		// be a refusal, an empty body or unparseable, and clearing here would wipe
+		// the previous record a moment before fail() writes it again — defeating
+		// the de-duplication and writing to the database on every request during a
+		// sustained outage. Callers clear once they have a usable result.
+		return $result;
+	}
+
+	/**
+	 * Remember why a role's last AI call failed. Without this the only symptom of
+	 * a bad key, a wrong endpoint or a tripped cap is the visitor-facing "no page
+	 * found" fallback, with nothing shown to the administrator.
+	 *
+	 * @param string   $role  embed|chat.
+	 * @param WP_Error $error Failure.
+	 * @return void
+	 */
+	protected static function record_error( $role, $error ) {
+		$all = get_option( self::ERROR_OPTION, array() );
+		if ( ! is_array( $all ) ) {
+			$all = array();
+		}
+		$entry = array(
+			'code'     => (string) $error->get_error_code(),
+			// Provider messages can be long; keep enough to identify the cause.
+			'message'  => mb_substr( (string) $error->get_error_message(), 0, 300 ),
+			'provider' => Ks_Concierge_Settings::get_provider( $role ),
+			'model'    => (string) Ks_Concierge_Settings::get( ( 'embed' === $role ) ? 'embeddings_model' : 'chat_model', '' ),
+			'time'     => time(),
+		);
+		// While a cap stays tripped this runs on every request, and only the
+		// timestamp differs — which would be a database write per request for as
+		// long as the outage lasts. Refresh the timestamp at most once a minute
+		// when nothing else about the failure changed.
+		$previous = isset( $all[ $role ] ) && is_array( $all[ $role ] ) ? $all[ $role ] : null;
+		if ( null !== $previous ) {
+			$same = true;
+			foreach ( array( 'code', 'message', 'provider', 'model' ) as $field ) {
+				if ( ( isset( $previous[ $field ] ) ? $previous[ $field ] : null ) !== $entry[ $field ] ) {
+					$same = false;
+					break;
+				}
+			}
+			if ( $same && ( $entry['time'] - (int) ( isset( $previous['time'] ) ? $previous['time'] : 0 ) ) < MINUTE_IN_SECONDS ) {
+				return;
+			}
+		}
+		$all[ $role ] = $entry;
+		update_option( self::ERROR_OPTION, $all, false );
+	}
+
+	/**
+	 * Drop a role's recorded failure after a successful call.
+	 *
+	 * @param string $role embed|chat.
+	 * @return void
+	 */
+	protected static function clear_error( $role ) {
+		$all = get_option( self::ERROR_OPTION, array() );
+		if ( ! is_array( $all ) || ! isset( $all[ $role ] ) ) {
+			return;
+		}
+		unset( $all[ $role ] );
+		update_option( self::ERROR_OPTION, $all, false );
+	}
+
+	/**
+	 * The role's last recorded failure, or null when the last call succeeded.
+	 *
+	 * @param string $role embed|chat.
+	 * @return array{code:string,message:string,provider:string,model:string,time:int}|null
+	 */
+	public static function last_error( $role ) {
+		$all = get_option( self::ERROR_OPTION, array() );
+		return ( is_array( $all ) && isset( $all[ $role ] ) && is_array( $all[ $role ] ) ) ? $all[ $role ] : null;
+	}
+
+	/**
+	 * Perform the request itself; see request() for the documented behaviour.
+	 *
+	 * @param string $endpoint Path beginning with a slash.
+	 * @param array  $body     Request payload.
+	 * @param string $role     embed|chat.
+	 * @return array|WP_Error Decoded JSON array on success.
+	 */
+	protected static function send( $endpoint, array $body, $role ) {
 		// Hard cost guard at the single HTTP chokepoint: no matter which caller
 		// (or buggy/looping code path) reaches here, a tripped daily/monthly cap
 		// or token backstop blocks the paid request before it is sent.
@@ -420,7 +619,18 @@ class Ks_Concierge_OpenAI {
 				}
 			}
 			if ( $attempts < 2 ) {
-				usleep( 400000 );
+				// Honour Retry-After on a rate-limited response: retrying after a
+				// fixed 0.4s during a throttle window just burns the second attempt
+				// and hands the visitor the fallback. Capped so a long server-side
+				// backoff cannot hold the request open past its timeout.
+				$wait_us = 400000;
+				if ( ! is_wp_error( $result ) && 429 === (int) wp_remote_retrieve_response_code( $result ) ) {
+					$retry_after = (int) wp_remote_retrieve_header( $result, 'retry-after' );
+					if ( $retry_after > 0 ) {
+						$wait_us = min( $retry_after, 5 ) * 1000000;
+					}
+				}
+				usleep( $wait_us );
 			}
 		}
 		if ( is_wp_error( $result ) ) {
@@ -489,12 +699,15 @@ class Ks_Concierge_OpenAI {
 		$table = $wpdb->prefix . 'ks_concierge_usage';
 		$day   = gmdate( 'Y-m-d' );
 
-		// Local/free providers (Ollama) are exempt from cost and token caps, so
-		// neither cost nor tokens are accumulated for them.
+		// A local endpoint accrues neither money nor a usable token count. A
+		// flat-rate subscription accrues no money either, but its tokens still
+		// count: the token cap is what bounds a runaway loop there, since the
+		// USD cap can never fire.
 		$local_free = Ks_Concierge_Settings::is_local_free( $role );
+		$no_cost    = $local_free || Ks_Concierge_Settings::is_flat_rate( $role );
 
 		$cost_nano = 0;
-		if ( $has_usage && '' !== $model && ! $local_free ) {
+		if ( $has_usage && '' !== $model && ! $no_cost ) {
 			$price = self::price_for( $role, $model );
 			if ( is_array( $price ) && empty( $price['free'] ) ) {
 				$usd       = ( ( $prompt_tokens / 1000 ) * $price['in'] ) + ( ( $completion_tokens / 1000 ) * $price['out'] );

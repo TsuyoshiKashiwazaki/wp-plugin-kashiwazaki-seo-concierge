@@ -20,6 +20,32 @@ class Ks_Concierge_Query {
 	const SCORE_THRESHOLD = 0.35;
 
 	/**
+	 * How far below the best match a candidate may score and still take part in
+	 * the recency ordering.
+	 *
+	 * Sorting by date alone would let a barely related page win a "what's new"
+	 * question just for having been touched yesterday. The window keeps the
+	 * reordering inside the group of pages the question actually reached.
+	 */
+	const RECENCY_SCORE_WINDOW = 0.15;
+
+	/**
+	 * How many extra matches to pull before reordering a recency question.
+	 *
+	 * The newest page in a series is rarely its closest semantic match: a run of
+	 * near identical monthly pages scores as one undifferentiated cluster, so the
+	 * current month can sit well outside the candidate slots. Widening the pool
+	 * costs one larger page read and nothing in prompt size, since only
+	 * candidate_count entries are sent on.
+	 */
+	const RECENCY_POOL_MULTIPLIER = 3;
+
+	/**
+	 * Upper bound for the widened pool.
+	 */
+	const RECENCY_POOL_MAX = 60;
+
+	/**
 	 * Cache helper.
 	 *
 	 * @var Ks_Concierge_Cache
@@ -43,9 +69,14 @@ class Ks_Concierge_Query {
 	 */
 	public function answer( $question, $session_hash, $consent = true ) {
 		$lang = $this->detect_lang( $question );
+		// The admin sandbox exists to try the current settings, so it must not
+		// read or write the shared answer cache: reading would show yesterday's
+		// answer instead of the effect of a change, and writing would push an
+		// administrator's trial answer to real visitors for up to a day.
+		$use_cache = ( 'sandbox' !== $session_hash );
 
 		// 1. Answer cache.
-		$cached = $this->get_cached_answer( $question );
+		$cached = $use_cache ? $this->get_cached_answer( $question ) : null;
 		if ( null !== $cached ) {
 			// Still log cache hits so analytics are not undercounted.
 			Ks_Concierge_Analytics::log(
@@ -66,8 +97,17 @@ class Ks_Concierge_Query {
 		// 2. Cost circuit breaker / missing key -> graceful fallback. /ask uses
 		// both roles: the embed provider (question vector) and the chat provider
 		// (answer). Either being unavailable falls back gracefully.
-		if ( ! Ks_Concierge_OpenAI::has_key( 'embed' ) || ! Ks_Concierge_OpenAI::has_key( 'chat' )
-			|| Ks_Concierge_OpenAI::is_breaker_open( 'embed' ) || Ks_Concierge_OpenAI::is_breaker_open( 'chat' ) ) {
+		// Ask through availability_error() rather than testing the conditions
+		// inline: it records why the role is unavailable, so a missing key or a
+		// tripped cap reaches the settings screen instead of silently turning
+		// every answer into the canned notice.
+		$unavailable = false;
+		foreach ( array( 'embed', 'chat' ) as $ai_role ) {
+			if ( null !== Ks_Concierge_OpenAI::availability_error( $ai_role ) ) {
+				$unavailable = true;
+			}
+		}
+		if ( $unavailable ) {
 			return $this->fallback_response( $question, $session_hash, $lang, 'unavailable', $consent );
 		}
 
@@ -81,11 +121,17 @@ class Ks_Concierge_Query {
 			return $this->fallback_response( $question, $session_hash, $lang, 'embed_error', $consent );
 		}
 
-		// 4. Cosine similarity search.
+		// 4. Cosine similarity search. A question about the newest content needs a
+		// wider pool than the candidate slots: similarity cannot tell a series of
+		// monthly pages apart, so the current month lands anywhere in the cluster.
 		$top_n   = (int) Ks_Concierge_Settings::get( 'candidate_count', 10 );
 		$top_n   = max( 1, min( 20, $top_n ) );
-		$matches = Ks_Concierge_Embeddings::search( $normalized, $top_n, $lang );
+		$recency = $this->wants_recent( $question );
+		$pool    = $recency ? min( self::RECENCY_POOL_MAX, $top_n * self::RECENCY_POOL_MULTIPLIER ) : $top_n;
+		$matches = Ks_Concierge_Embeddings::search( $normalized, $pool, $lang );
 
+		// Judged on the closest match, before any reordering: relevance decides
+		// whether the site has an answer at all, recency only decides the order.
 		if ( empty( $matches ) || $matches[0]['score'] < self::SCORE_THRESHOLD ) {
 			return $this->low_match_response( $question, $session_hash, $lang, $consent );
 		}
@@ -96,6 +142,10 @@ class Ks_Concierge_Query {
 		foreach ( $matches as $m ) {
 			$score_by[ $m['page_id'] ] = $m['score'];
 		}
+
+		$matches = $recency
+			? $this->order_by_recency( $matches, $pages, $top_n )
+			: array_slice( $matches, 0, $top_n );
 
 		$candidate_pages = array();
 		foreach ( $matches as $m ) {
@@ -152,7 +202,9 @@ class Ks_Concierge_Query {
 			'source'     => 'ai',
 		);
 
-		$this->store_cached_answer( $question, $response );
+		if ( $use_cache ) {
+			$this->store_cached_answer( $question, $response );
+		}
 		Ks_Concierge_Analytics::log(
 			array(
 				'question'     => $question,
@@ -181,8 +233,13 @@ class Ks_Concierge_Query {
 		$urls  = array();
 		$lines = array();
 		foreach ( $pages as $page ) {
-			$urls[]  = $page->url;
-			$lines[] = '- ' . $page->title . ' (' . $page->url . '): ' . wp_trim_words( (string) $page->summary, 40, '' );
+			$urls[] = $page->url;
+			// Candidates used to carry no date at all. Retrieval ranks by semantic
+			// similarity alone, so a series of near identical monthly pages reaches
+			// the model as interchangeable and "the latest report" is answered with
+			// whichever one happens to score highest. The last modified date is the
+			// only signal that tells them apart.
+			$lines[] = '- ' . $page->title . $this->lastmod_tag( $page ) . ' (' . $page->url . '): ' . wp_trim_words( (string) $page->summary, 40, '' );
 		}
 
 		$schema = array(
@@ -215,6 +272,10 @@ class Ks_Concierge_Query {
 			$system = $this->default_system_prompt();
 		}
 		$system .= "\n" . __( 'Only recommend pages from the provided candidate list. Never invent URLs. If none are relevant, return an empty candidates array. Reply in the same language as the question.', 'kashiwazaki-seo-concierge' );
+		// Each candidate line ends its title with [YYYY-MM-DD]. Without saying what
+		// the bracket means the model reads it as part of the title, so spell out
+		// both the meaning and what to do with it when recency is asked for.
+		$system .= "\n" . __( 'Each candidate is listed as "- Title [YYYY-MM-DD] (URL): summary", where the bracketed date is when that page was last updated. A candidate without a date has no known update date. When the question asks for the latest, newest, or most recent content, choose the relevant candidate with the most recent date rather than the first one listed, and mention that date in the answer.', 'kashiwazaki-seo-concierge' );
 		// The base prompt is in English and candidate titles/URLs often contain
 		// English, which makes the model drift to English on short inputs. Pin the
 		// reply language explicitly when the question is detected as Japanese.
@@ -238,6 +299,131 @@ class Ks_Concierge_Query {
 		);
 
 		return Ks_Concierge_OpenAI::chat_structured( $messages, $schema );
+	}
+
+	/**
+	 * Format a candidate's last modified date for the prompt.
+	 *
+	 * Sitemap entries may omit lastmod, and rows written before the column was
+	 * populated can hold a zero date. Emitting an empty or bogus date would let
+	 * the model rank a page as old (or new) on made up information, so those
+	 * candidates go out without a date and the prompt explains the absence.
+	 *
+	 * @param object $page Page row.
+	 * @return string Bracketed date with a leading space, or an empty string.
+	 */
+	protected function lastmod_tag( $page ) {
+		$timestamp = $this->lastmod_timestamp( $page );
+		if ( ! $timestamp ) {
+			return '';
+		}
+		return ' [' . gmdate( 'Y-m-d', $timestamp ) . ']';
+	}
+
+	/**
+	 * Last modified date of a page row as a timestamp.
+	 *
+	 * @param object $page Page row.
+	 * @return int Timestamp, or 0 when the page carries no usable date.
+	 */
+	protected function lastmod_timestamp( $page ) {
+		$lastmod = isset( $page->lastmod ) ? trim( (string) $page->lastmod ) : '';
+		if ( '' === $lastmod || 0 === strpos( $lastmod, '0000-00-00' ) ) {
+			return 0;
+		}
+		$timestamp = strtotime( $lastmod );
+		return $timestamp ? (int) $timestamp : 0;
+	}
+
+	/**
+	 * Whether the question is asking for the newest content.
+	 *
+	 * @param string $question Visitor question.
+	 * @return bool
+	 */
+	protected function wants_recent( $question ) {
+		$question = (string) $question;
+		$markers  = array( '最新', '最近', '直近', '新着', '今月', '今週', '先月', '先週', '今年', '新しい順', '一番新しい', 'いちばん新しい', '最も新しい', 'もっとも新しい' );
+		foreach ( $markers as $marker ) {
+			if ( false !== strpos( $question, $marker ) ) {
+				return true;
+			}
+		}
+		// strtolower folds ASCII only, so multibyte input passes through untouched
+		// and this works on hosts without the mbstring extension.
+		$lower = strtolower( $question );
+		foreach ( array( 'latest', 'newest', 'most recent', 'up to date', 'up-to-date', 'this month', 'last month', 'this week' ) as $marker ) {
+			if ( false !== strpos( $lower, $marker ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Reorder matches by last modified date for a question about recent content.
+	 *
+	 * Similarity ranks a run of near identical monthly pages as one flat cluster,
+	 * so the current month can sit far outside the candidate slots and never
+	 * reach the model at all. Ordering the cluster by date puts the newest entry
+	 * in front while relevance still decides who is in the cluster.
+	 *
+	 * @param array<int,array> $matches Matches, best score first.
+	 * @param array<int,object> $pages  Page rows keyed by id.
+	 * @param int              $limit   How many matches to keep.
+	 * @return array<int,array>
+	 */
+	protected function order_by_recency( array $matches, array $pages, $limit ) {
+		if ( count( $matches ) < 2 ) {
+			return $matches;
+		}
+		// The closest match keeps its slot. It is the page the question actually
+		// hit, and for "the latest X" it is often the index listing every X —
+		// worth offering next to the newest entry itself.
+		$best  = array_shift( $matches );
+		$floor = max( self::SCORE_THRESHOLD, (float) $best['score'] - self::RECENCY_SCORE_WINDOW );
+
+		$dated = array();
+		$rest  = array();
+		foreach ( $matches as $position => $match ) {
+			$page = isset( $pages[ $match['page_id'] ] ) ? $pages[ $match['page_id'] ] : null;
+			$time = $page ? $this->lastmod_timestamp( $page ) : 0;
+			// A page with no date cannot be ordered by one, and a page far below
+			// the best score is only in the pool at all because the search was
+			// widened. Both keep their similarity order behind the dated group
+			// rather than being dropped.
+			if ( ! $time || (float) $match['score'] < $floor ) {
+				$rest[] = $match;
+				continue;
+			}
+			$dated[] = array(
+				'match'    => $match,
+				'time'     => $time,
+				'position' => $position,
+			);
+		}
+
+		usort(
+			$dated,
+			static function ( $a, $b ) {
+				if ( $a['time'] === $b['time'] ) {
+					// Same date: fall back on relevance, which is the order the
+					// search returned. Bulk regenerated archives share a date, so
+					// this decides more rows than it looks like it should.
+					return ( $a['position'] < $b['position'] ) ? -1 : 1;
+				}
+				return ( $a['time'] < $b['time'] ) ? 1 : -1;
+			}
+		);
+
+		$ordered = array( $best );
+		foreach ( $dated as $row ) {
+			$ordered[] = $row['match'];
+		}
+		foreach ( $rest as $match ) {
+			$ordered[] = $match;
+		}
+		return array_slice( $ordered, 0, $limit );
 	}
 
 	/**
@@ -284,7 +470,10 @@ class Ks_Concierge_Query {
 			'source'     => 'chat',
 		);
 		// Cache so recurring greetings ("こんにちは" 等) do not spend a call each time.
-		$this->store_cached_answer( $question, $response );
+		// Skipped for the sandbox, whose trial answers must not reach visitors.
+		if ( 'sandbox' !== $session_hash ) {
+			$this->store_cached_answer( $question, $response );
+		}
 		Ks_Concierge_Analytics::log(
 			array(
 				'question'     => $question,
@@ -337,23 +526,17 @@ class Ks_Concierge_Query {
 			array( 'role' => 'system', 'content' => $system ),
 			array( 'role' => 'user', 'content' => $question ),
 		);
-		$schema = array(
-			'type'                 => 'object',
-			'additionalProperties' => false,
-			'required'             => array( 'answer', 'candidates' ),
-			'properties'           => array(
-				'answer'     => array( 'type' => 'string' ),
-				'candidates' => array(
-					'type'  => 'array',
-					'items' => array( 'type' => 'string' ),
-				),
-			),
-		);
-		$llm = Ks_Concierge_OpenAI::chat_structured( $messages, $schema, 'ks_concierge_chat' );
-		if ( is_wp_error( $llm ) || empty( $llm['answer'] ) ) {
+		// This reply is prose the widget prints as-is — it recommends no pages, so
+		// there is nothing to structure. Asking for plain text keeps it working on
+		// providers that ignore response_format (Ollama and other OpenAI-compatible
+		// endpoints), which would otherwise answer in prose, fail JSON parsing and
+		// drop every greeting to the canned "no page found" notice.
+		$reply = Ks_Concierge_OpenAI::chat_text( $messages );
+		if ( is_wp_error( $reply ) ) {
 			return null;
 		}
-		return (string) $llm['answer'];
+		$reply = trim( (string) $reply );
+		return ( '' === $reply ) ? null : $reply;
 	}
 
 	protected function fallback_response( $question, $session_hash, $lang, $reason, $consent = true ) {
@@ -410,15 +593,38 @@ class Ks_Concierge_Query {
 	}
 
 	/**
-	 * Cache key hash for a question, bound to the current embedding signature and
-	 * chat model so a provider/model change does not serve answers composed in a
-	 * previous embedding space or by a different model.
+	 * Everything that shapes an answer, as one signature string.
+	 *
+	 * Binding the cache key to only the model left the rest of the configuration
+	 * outside it: changing the service, the endpoint, the tone instructions or
+	 * the number of candidates kept returning yesterday's answer for up to a
+	 * day, so the setting looked like it had done nothing.
+	 *
+	 * @return string
+	 */
+	protected function answer_signature() {
+		$parts = array(
+			Ks_Concierge_Embeddings::current_embed_sig(),
+			Ks_Concierge_Settings::get_provider( 'chat' ),
+			(string) Ks_Concierge_Settings::get_api_base( 'chat' ),
+			(string) Ks_Concierge_Settings::get( 'chat_model', '' ),
+			(string) Ks_Concierge_Settings::get( 'chat_structured_mode', 'auto' ),
+			(string) Ks_Concierge_Settings::get( 'system_prompt', '' ),
+			(string) Ks_Concierge_Settings::get( 'prompt_template', 'general' ),
+			(string) Ks_Concierge_Settings::get( 'candidate_count', 10 ),
+		);
+		return hash( 'sha256', implode( '|', $parts ) );
+	}
+
+	/**
+	 * Cache key hash for a question, bound to the full answer signature so no
+	 * configuration change can leave stale answers in circulation.
 	 *
 	 * @param string $question Question.
 	 * @return string
 	 */
 	protected function cache_hash( $question ) {
-		$sig   = Ks_Concierge_Embeddings::current_embed_sig();
+		$sig   = $this->answer_signature();
 		$model = (string) Ks_Concierge_Settings::get( 'chat_model', 'gpt-4o-mini' );
 		return hash( 'sha256', $this->normalize_question( $question ) . '|' . $sig . '|' . $model );
 	}

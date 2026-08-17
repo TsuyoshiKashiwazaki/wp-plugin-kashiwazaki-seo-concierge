@@ -285,7 +285,18 @@
 	}
 
 	function addTyping() {
-		var t = el( 'div', 'ks-concierge__msg ks-concierge__msg--bot ks-concierge__typing', cfg.i18n.thinking );
+		var t = el( 'div', 'ks-concierge__msg ks-concierge__msg--bot ks-concierge__typing' );
+		// A spinner beside the caption: the first answer to a question takes a few
+		// seconds, and static text alone leaves the visitor unsure whether the bot
+		// is working or stuck.
+		var spinner = el( 'span', 'ks-concierge__spinner' );
+		spinner.setAttribute( 'aria-hidden', 'true' );
+		t.appendChild( spinner );
+		var label = el( 'span', 'ks-concierge__typing-label', cfg.i18n.thinking );
+		t.appendChild( label );
+		// Announced to screen readers, which cannot see the spinner.
+		t.setAttribute( 'role', 'status' );
+		t.setAttribute( 'aria-live', 'polite' );
 		t.setAttribute( 'data-typing', '1' );
 		messages.appendChild( t );
 		messages.scrollTop = messages.scrollHeight;
